@@ -1,0 +1,4 @@
+[submodule "bigcodebench"]
+	path = third_party/bigcodebench
+        url = https://github.com/sanadlab/bigcodebench.git
+        branch = patched

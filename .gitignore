@@ -1,0 +1,76 @@
+# Raw brainstorming / design notes
+init.txt
+
+# Generated data and outputs
+data/
+outputs/
+dataset/bigcodebench/frozen.jsonl
+dataset/bigcodebench/intermediate/*/
+# Ignore all top-level .jsonl files in intermediate, but not .jsonl.zst
+dataset/bigcodebench/intermediate/*.jsonl
+!dataset/bigcodebench/intermediate/*.jsonl.zst
+
+# Mutation_DS phase2 splits live inside dataset/bigcodebench/phase2.tar.zst.
+# Hide the decompressed working tree; keep the bundle itself tracked.
+dataset/bigcodebench/phase2/
+!dataset/bigcodebench/phase2.tar.zst
+
+# ICSE26 dataset lives inside dataset/icse26.tar.zst.
+# Hide the decompressed working tree; keep the bundle itself tracked.
+dataset/icse26/
+!dataset/icse26.tar.zst
+
+# Third-party submodule content is fetched via `make setup`
+# (git submodules handle this, but just in case)
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Personal Copilot/Claude/skill customizations (per-developer)
+.github/
+
+# Secrets and API keys
+.secrets.json
+*.secrets.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# HPC job logs
+logs/
+
+# Vector embeddings and result tarballs are hosted externally
+# (use `make download-artifacts`; rebuild with `make compress-artifacts`).
+# Anchor with a leading slash so we don't also ignore src/vectors/.
+/vectors.tar.xz
+/vectors.tar.zst
+/results.tar.zst
+/vectors/
+
+# Raw results and some relevant exceptions
+/results/
+!/results/split_analysis/
+/results/split_analysis/pair_metrics.csv
+
+# Code-reorg experiment raw outputs (tracked as compressed archives instead)
+code-reorg-results/
+code-reorg-vectors/

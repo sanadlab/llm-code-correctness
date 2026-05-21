@@ -1,0 +1,13 @@
+# Intentionally minimal in Phase 0.
+# Add packages only when a later phase explicitly requires them.
+
+# Phase 1 dependencies
+pyyaml
+data-designer
+duckdb>=1.0,<1.2
+
+# Phase 2 dependencies
+torch
+transformers
+scikit-learn
+numpy

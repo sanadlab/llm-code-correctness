@@ -1,0 +1,54 @@
+benchmark: bigcodebench
+subset: full
+seed: 0
+output_root: dataset/bigcodebench
+validate:
+  docker_image: bigcodebench/bigcodebench-evaluate:latest
+  docker_script: scripts/eval/run_bigcodebench_eval.sh
+  split: complete
+  min_time_limit: 10
+  parallel: 8
+  batch_size: 2000
+  container_runtime: singularity
+  sif_path: ${SCRATCH}/containers/bigcodebench-evaluate.sif
+confound:
+  enabled: true
+  max_variants_per_mutant: 1
+  chunk_size: 500          # mutants per outer loop iteration; vLLM handles GPU batching internally
+  local:
+    # Qwen3-Coder-Next: 80B total / 3B activated MoE, 256K context, best open code model.
+    # Requires tensor_parallel_size>=2 on H100/H200 80GB (bfloat16 ~160 GB total).
+    # Set tensor_parallel_size to the number of GPUs available on your HPC node.
+    model: Qwen/Qwen2.5-Coder-7B-Instruct
+    dtype: bfloat16
+    tensor_parallel_size: 1        # set to number of available H100/H200 GPUs (2 minimum)
+    temperature: 0.2
+    top_p: 0.95
+    max_tokens: 2048
+    gpu_memory_utilization: 0.90
+    prompt_template_version: v1
+operators:
+  include:
+    - AOR
+    - AOI
+    - AOD
+    - ROR
+    - COR
+    - COD
+    - UOI
+    - UOD
+    - CR
+    - VVR
+    - VCR
+    - CVR
+    - SD
+    - RVM
+    - TR
+    - FR
+    - RC
+    - NEG
+    - FCD
+    - CRN
+    - BOR
+    - BSOR
+    - BSOD

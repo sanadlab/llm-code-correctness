@@ -1,0 +1,9 @@
+# HPC-only dependencies (requires CUDA; extends requirements.txt).
+# Install with: make setup-hpc  (creates the venv under $SCRATCH/envs/<repo-name>)
+# Requires the HPC Python module to be loaded first, e.g. `module load python/3.11.3`.
+# Requires the CUDA toolkit to be available; on NYUAD HPC use `module load cuda/12.2.0`.
+# Or manually:  pip install -r requirements.txt -r requirements-hpc.txt
+
+# vLLM for local LLM inference (Phase 1 local confound backend).
+# Requires CUDA 12.x and compatible GPU drivers.
+vllm>=0.8.0
