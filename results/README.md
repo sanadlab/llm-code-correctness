@@ -1,43 +1,39 @@
 # Results — Layer Selection & Monitoring
 
-One folder per model, same names as in `../vectors/`. The interesting ones for the summer project are:
+One folder per model, same names as in `../vectors/`. The top-level directories under each model are split families, matching `../vectors/<model>/`:
 
-- `<model>/icse26_bigcodebench/icse26/` — results on ICSE26_DS (BigCodeBench tasks)
-- `<model>/icse26_humaneval/icse26/`   — results on ICSE26_DS (HumanEval tasks)
-- `<model>/bigcodebench/<split>/`       — results on Mutation_DS splits
-
-Ignore the `icse26_sentiment*`, `icse26_translations*`, etc. folders.
+- `<model>/icse26/<benchmark>/...`     — results on ICSE26_DS
+- `<model>/s*/...`                      — results on Mutation_DS splits
+- `<model>/ood_mbpp/...`, `<model>/ood_synthetic/...` — OOD results
 
 ## Layout
 
 ```
-<model>/<dataset>/<split_family>/phase3/<method>/<framing>/fold_N/monitoring/
-    monitoring_results.json          # per-layer validation scores → used to pick the layer
-
-<model>/<dataset>/<split_family>/phase4/<method>/<framing>/fold_N/monitoring/
-    monitoring_test_results.json     # selected layer + test-set metrics
-    monitoring_per_task.jsonl        # per-task scores on the test set
+<model>/<split_family>/<dataset>/<distribution>/<method>/<fit_framing>/<representation>/val=<framing>__test=<framing>/fold_N/
+    results.json     # selected_layer + per-layer validation scores
+    detailed.json    # per-task / per-pair details on the test set
+    metadata.json    # model, dataset, split_family, fold, method, framings, etc.
 ```
 
-- `phase3` = layer selection (run on the validate split, scores every layer)
-- `phase4` = final evaluation (the selected layer applied to the test split)
-
-`method` and `framing` mean the same thing as in `../vectors/README.md` (`pca` / `mean_diff` / `random`, and `repe` / `function`).
+- `<method>`, `<fit_framing>`, `<representation>` mean the same as in `../vectors/README.md`.
+- `val=<framing>__test=<framing>/` records the framings used when **evaluating** on the validate / test sets (these can differ from `fit_framing`, e.g. fit on `raw`, evaluate on `concept`).
 
 ## Where to find the "selected layer"
 
-Open `phase4/<method>/<framing>/fold_N/monitoring/monitoring_test_results.json` and look at the `phase3_selected` field — that's the layer chosen for this model/dataset/method/framing/fold. Example:
+Open `.../fold_N/results.json`. The top-level `selected_layer` field is the layer chosen on the validate split; `val_per_layer` has the per-layer validation scores it was chosen from. Example:
 
 ```json
-"phase3_selected": { "rep_type": "sequence_last", "layer": 1, "pair_idx": null }
+{
+  "fold": 3,
+  "selected_layer": 16,
+  "val_per_layer": { "2": { "pairwise_acc": 0.65 }, "3": { ... }, ... }
+}
 ```
 
 ## What's currently here
 
-- ICSE26_DS (BigCodeBench and HumanEval): `pca` and `mean_diff` with the `repe` framing only. No `function` framing yet.
-- Mutation_DS splits: `pca` and `mean_diff` with the `function` framing (and `mean_diff/neutral` for some splits). Only folds 0 and 1.
+Results (contain selected layers during validation) for all 4 models, datasets, and methods.
 
-The same caveats from `../vectors/README.md` apply: the missing combinations are things you may end up generating.
 
 ---
 

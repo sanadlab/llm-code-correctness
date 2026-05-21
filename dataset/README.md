@@ -4,30 +4,24 @@ This folder has the two datasets you'll use this summer. The summer plan calls t
 
 ## ICSE26_DS — `icse26/`
 
-The data from the ICSE 2026 paper. You only care about two benchmarks:
+The data from the ICSE 2026 paper. The benchmarks you'll work with are:
 
 - `icse26/bigcodebench/`
 - `icse26/humaneval/`
 
-Ignore the other folders (`coref`, `ner`, `sentiment`, `translations`, …) — they are from unrelated experiments.
+(`icse26/mbpp/` and `icse26/synthetic/` are also here and used as out-of-distribution fit sets in some experiments.)
 
-Each benchmark looks like this:
+Each benchmark is a flat 10-fold split:
 
 ```
 icse26/bigcodebench/
-├── fold_0/ ... fold_9/      # the original "flat" format
-│   ├── fit.jsonl            # train (used to learn the reading vector)
-│   ├── validate.jsonl       # used to pick the layer
-│   └── test.jsonl           # held-out evaluation
-└── icse26/                  # SAME data, reformatted for the internal pipeline
-    └── fold_*/...
+└── fold_0/ ... fold_9/
+    ├── fit.jsonl        # train (used to learn the reading vector)
+    ├── validate.jsonl   # used to pick the layer
+    └── test.jsonl       # held-out evaluation
 ```
 
-The `fold_N/*.jsonl` files at the top are the simple format — one task per line with a list of candidate implementations and a parallel list of `0/1` labels (`1` = correct). The nested `icse26/` directory is a reformatted version that's more appropriate for this repository. THEY REPRESENT THE SAME DATA. To be clear, let's use an example:
-- `dataset/icse26/bigcodebench/fold_0/fit.jsonl` has the same tasks and implementations as
-- `dataset/icse26/bigcodebench/icse26/fold_0/fit.jsonl`
-
-I'd say use the nested `icse26/`, it's a bit more verbose but more organized.
+One task per line. Each record has an `implementations` list; each entry has a `code` string, a `kind` (`"canonical"` or `"pre-generated"`), and a `label` (`1` = correct, `0` = incorrect).
 
 ## Mutation_DS — `bigcodebench/`
 
