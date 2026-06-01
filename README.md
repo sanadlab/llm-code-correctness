@@ -87,6 +87,10 @@ figshare. Download them **manually via your browser**, then copy them to HPC:
 
 If you need to repack after regenerating something: `make compress-artifacts`.
 
+## Code review viewer
+
+A browser UI for inspecting Phase 1 / ICSE26 JSONL without reading raw JSON in the editor lives in [`viewer/`](viewer/). See [viewer/README.md](viewer/README.md) for local dev and Vercel deployment (set **Root Directory** to `viewer`).
+
 ## WhAt’s iN ThE BoX?!?!
 (title makes sense if you watched the movie [Seven](https://www.imdb.com/title/tt0114369/))
 
