@@ -40,6 +40,21 @@ make submodules
 
 Sets up and installs `third_party/bigcodebench` into the active venv (most likely only needed for phase 1, but please do it nonetheless).
 
+## Pull the BigCodeBench evaluation container (phase 1 only)
+
+The phase 1 validation steps (`validate_ground_truth`, `validate_mutants`,
+`validate_confounds`) run BigCodeBench inside a Singularity container. Pull
+its image before running those steps:
+
+```bash
+make pull-eval-image
+```
+
+This downloads `docker://bigcodebench/bigcodebench-evaluate:latest` to
+`$SCRATCH/containers/bigcodebench-evaluate.sif`, which the path referenced by
+`configs/phase1/bigcodebench.yaml` (`validate.sif_path`). If you need to override the
+destination, do: `make pull-eval-image SIF_PATH=/my/path.sif` (don't forget to update any configs after).
+
 ## Decompress datasets
 
 ```bash

@@ -33,7 +33,8 @@ endif
 
 .PHONY: setup setup-env setup-hpc update update-env update-hpc \
         submodules compress decompress download-models collect-hidden-states \
-        compress-artifacts decompress-artifacts download-artifacts
+        compress-artifacts decompress-artifacts download-artifacts \
+        pull-eval-image
 
 # ---------------------------------------------------------------------------
 # Environment setup
@@ -214,4 +215,26 @@ decompress-artifacts:
 		zstd -d -c "$(RESULTS_ARCHIVE)" | tar -xf -; \
 	else \
 		echo "Missing $(RESULTS_ARCHIVE). Run 'make download-artifacts' first."; \
+	fi
+
+# ---------------------------------------------------------------------------
+# BigCodeBench evaluation container (Singularity/Apptainer)
+# ---------------------------------------------------------------------------
+# Phase 1 validation steps run BigCodeBench inside a Singularity image. Pull it
+# once into the path referenced by configs/phase1/bigcodebench.yaml (sif_path).
+# Override the destination with: make pull-eval-image SIF_PATH=/my/path.sif
+
+SIF_PATH ?= $(SCRATCH)/containers/bigcodebench-evaluate.sif
+
+pull-eval-image:
+	@if [ -z "$(SCRATCH)" ] && [ "$(SIF_PATH)" = "$(SCRATCH)/containers/bigcodebench-evaluate.sif" ]; then \
+		echo "Error: SCRATCH is not set. Export SCRATCH or pass SIF_PATH explicitly."; \
+		exit 1; \
+	fi
+	@mkdir -p "$(dir $(SIF_PATH))"
+	@if [ -f "$(SIF_PATH)" ]; then \
+		echo "SIF already exists: $(SIF_PATH)"; \
+	else \
+		echo "Pulling bigcodebench-evaluate image -> $(SIF_PATH) ..."; \
+		singularity pull "$(SIF_PATH)" docker://bigcodebench/bigcodebench-evaluate:latest; \
 	fi
