@@ -19,21 +19,18 @@ save one vector per implementation per layer.
 **Steps (in order):**
 
 1. **Load the data** from the dataset JSONL files (e.g.
-   `dataset/icse26/bigcodebench/fold_0/validate.jsonl`). Each row is one
+  `dataset/icse26/bigcodebench/fold_0/validate.jsonl`). Each row is one
    implementation with its text, label (correct or incorrect), and ids.
-
 2. **Build the prompt** using the chosen framing (for standard runs:
-   `neutral` — the model sees the task and the candidate code in a fixed
+  `neutral` — the model sees the task and the candidate code in a fixed
    template).
-
 3. **Run the model** in float16 and read hidden states at every layer.
-
 4. **Pool tokens into one vector per layer** using `response_avg`: average the
-   hidden states over the **response** tokens (the candidate code), not the
-   prompt. That gives one vector of size 4096 per layer per implementation.
-
+  hidden states over the **response** tokens (the candidate code), not the
+   prompt. That gives one vector per layer per implementation, with length 
+   equal to the model's hidden dimension.
 5. **Save** to `bundle.pt` plus a small `metadata.json` (model name, fold,
-   source file, git commit, etc.).
+  source file, git commit, etc.).
 
 The extraction script is:
 
@@ -55,14 +52,14 @@ the GPU run happens again later.
 
 ---
 
-## What “valid” means
+## What "verification" means
 
 We already ran the full correctness pipeline once. That run produced:
 
-- **`vectors/.../direction.pt`** — a direction vector per layer, learned from
-  the fit split.
-- **`results/.../detailed.json`** — per-implementation **scores** on validate
-  and test (one number per layer per implementation), plus labels and task ids.
+- `**vectors/.../direction.pt`** — a direction vector per layer, learned from
+the fit split.
+- `**results/.../detailed.json**` — per-implementation **scores** on validate
+and test (one number per layer per implementation), plus labels and task ids.
 
 Verification asks: **if we take our newly cached hidden states and score them
 the same way as before, do we get the same kind of results as
@@ -82,9 +79,9 @@ each fold:
 
 1. Loads the cached `bundle.pt` for validate and test.
 2. Loads the matching `direction.pt` and `detailed.json` from the earlier
-   experiment.
+  experiment.
 3. For each implementation, projects its cached activations onto the direction
-   at every layer (same formula as the original pipeline).
+  at every layer (same formula as the original pipeline).
 4. Compares those scores to the scores stored in `detailed.json`.
 
 **Pass/fail rule (the only thing that stops the script):**
@@ -94,10 +91,10 @@ other almost perfectly**. Concretely, we require correlation at least **0.999**
 (default `--verify-corr-min`). In practice a good cache is above **0.99999**.
 
 - If correlation is high, the cache is valid for analysis: rankings and layer
-  behavior match what we already published.
+behavior match what we already published.
 - If correlation drops far below 1 (e.g. 0.2 or 0.4), something is wrong with
-  extraction — wrong samples, wrong pooling, wrong layer, wrong direction file,
-  etc. The script exits with an error.
+extraction — wrong samples, wrong pooling, wrong layer, wrong direction file,
+etc. The script exits with an error.
 
 **What does *not* fail verification:**
 
@@ -123,11 +120,11 @@ closely. We log that warning but **do not** treat it as failure.
 ## What verification does *not* check
 
 - It does not re-run the fit split or rebuild directions; it assumes
-  `vectors/.../direction.pt` from the original experiment is correct.
+`vectors/.../direction.pt` from the original experiment is correct.
 - It does not prove bit-for-bit identity with the first GPU run (that is not
-  possible with float16).
+possible with float16).
 - It does not fail on small accuracy differences when correlation is already
-  very high.
+very high.
 
 Those limits are intentional: we care that cached hidden states support the
 **same conclusions** as the run we already trust, not that every float is

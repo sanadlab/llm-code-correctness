@@ -77,7 +77,3 @@ logs/
 # Code-reorg experiment raw outputs (tracked as compressed archives instead)
 code-reorg-results/
 code-reorg-vectors/
-
-# Personal
-personal/
-scripts/analysis/icse26_token_lengths.py
