@@ -21,6 +21,7 @@ import torch
 from src.framings import Concept, Function, Neutral
 from src.framings.base import Framing, Prompt
 from src.framings.raw import Raw
+from src.hidden_states.cache import git_commit, safe_model_dir
 from src.hidden_states import HiddenStateBundle
 from src.representations import (
     Boundaries,
@@ -31,6 +32,7 @@ from src.representations import (
     SequenceLast,
 )
 from src.vectors import MeanDiff, PCA, VectorMethod
+from src.vectors.projection import project_all_layers
 
 
 # ---------------------------------------------------------------------------
@@ -379,31 +381,6 @@ def one_of_n_accuracy(scores: torch.Tensor, labels: torch.Tensor, task_ids: List
 # Cross-validation driver
 # ---------------------------------------------------------------------------
 
-def _safe_model_dir(model_name: str) -> str:
-    return model_name.replace("/", "__")
-
-
-def _git_commit() -> str:
-    try:
-        import subprocess
-        sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
-        ).decode().strip()
-        return sha
-    except Exception:
-        return "unknown"
-
-
-def _project_all_layers(direction, acts: torch.Tensor) -> Tuple[List[int], torch.Tensor]:
-    """Project `acts` ([N, L+1, H]) onto `direction` at every layer.
-
-    Returns (layers, scores[N, len(layers)]).
-    """
-    layers = direction.layers
-    cols = [direction.project(acts, layer).cpu() for layer in layers]
-    return layers, torch.stack(cols, dim=1)  # [N, len(layers)]
-
-
 def run_cross_validation(
     *,
     splits_dir: Path,
@@ -457,9 +434,9 @@ def run_cross_validation(
 
     write_vectors = vectors_dir is not None
     write_results = results_dir is not None
-    git_sha = _git_commit() if (write_vectors or write_results) else "unknown"
+    git_sha = git_commit() if (write_vectors or write_results) else "unknown"
     common_path = (
-        f"{_safe_model_dir(model_name)}/{split_family}/{dataset}/{distribution}/"
+        f"{safe_model_dir(model_name)}/{split_family}/{dataset}/{distribution}/"
         f"{method_label}/{fit_framing_label}/{representation.name}"
     )
     eval_segment = f"val={val_framing_label}__test={test_framing_label}"
@@ -489,7 +466,7 @@ def run_cross_validation(
 
         # Per-layer val scores.
         acts_val = representation.select(bundle_val)
-        layers, val_scores_all = _project_all_layers(direction, acts_val)  # [N_val, L]
+        layers, val_scores_all = project_all_layers(direction, acts_val)  # [N_val, L]
         val_per_layer: Dict[int, float] = {}
         for j, layer in enumerate(layers):
             val_per_layer[layer] = pairwise_accuracy(
@@ -507,7 +484,7 @@ def run_cross_validation(
 
         # Per-layer test scores.
         acts_test = representation.select(bundle_test)
-        _, test_scores_all = _project_all_layers(direction, acts_test)  # [N_test, L]
+        _, test_scores_all = project_all_layers(direction, acts_test)  # [N_test, L]
         test_per_layer: Dict[int, Dict[str, float]] = {}
         for j, layer in enumerate(layers):
             col = test_scores_all[:, j]

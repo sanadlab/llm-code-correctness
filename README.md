@@ -114,6 +114,34 @@ Same `<model>/<dataset>/<split>/...` layout as `vectors/`. Per-fold output:
 
 See [results/README.md](results/README.md) for more details.
 
+## Collect hidden states
+
+Extract and cache per-layer hidden states for all four plan models on both
+ICSE26 benchmarks (BigCodeBench and HumanEval). Run on a GPU node (interactive
+session or Slurm); the full sweep is GPU-heavy and may take many hours.
+
+**Prerequisites:** `make setup` (or `make setup-hpc`), `make decompress`,
+`make download-models`, and `vectors/` unpacked (`make decompress-artifacts`) for
+`--verify`.
+
+```bash
+make collect-hidden-states
+```
+
+Writes to `hidden_states/` (override with `HS_OUTPUT_DIR`). Completed bundles
+are skipped on re-run; pass `HS_FORCE=1` to re-extract.
+
+Partial sweeps:
+
+```bash
+make collect-hidden-states HS_MODELS="mistralai/Mistral-7B-Instruct-v0.3"
+make collect-hidden-states HS_BENCHMARKS=humaneval
+make collect-hidden-states HF_HOME=/path/to/my/hf-cache
+```
+
+See [hidden_states/STRUCTURE.md](hidden_states/STRUCTURE.md) for output layout.
+
+
 ## Regenerating the vectors/results (secondary)
 You don't need to do this. Just added information. The available `vectors/` and `results/` were produced
 by the experiments in `scripts/experiments/`. The code under

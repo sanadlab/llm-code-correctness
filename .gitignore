@@ -65,6 +65,9 @@ logs/
 /vectors.tar.zst
 /results.tar.zst
 /vectors/
+/hidden_states/*
+!/hidden_states/STRUCTURE.md
+!/hidden_states/README.md
 
 # Raw results and some relevant exceptions
 /results/
@@ -74,3 +77,7 @@ logs/
 # Code-reorg experiment raw outputs (tracked as compressed archives instead)
 code-reorg-results/
 code-reorg-vectors/
+
+# Personal
+personal/
+scripts/analysis/icse26_token_lengths.py
