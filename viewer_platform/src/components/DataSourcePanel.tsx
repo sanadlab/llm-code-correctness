@@ -26,6 +26,7 @@ type DataSourcePanelProps = {
   onUploadLoad: (params: {
     categoryId: UploadCategoryId;
     primaryText: string;
+    fullPrimaryText: string;
     tasksText?: string;
     mutantsText?: string;
     fileName: string;
@@ -160,11 +161,13 @@ export function DataSourcePanel({
       const { parseJsonlFile } = await import("@/lib/jsonl-stream");
       const cap = limit || category.defaultLimit || maxUploadRecords;
       const { text, truncated } = await parseJsonlFile(primaryFile, cap);
+      const fullPrimaryText = await primaryFile.text();
       const tasksText = tasksFile ? await tasksFile.text() : undefined;
       const mutantsText = mutantsFile ? await mutantsFile.text() : undefined;
       onUploadLoad({
         categoryId: uploadCategory,
         primaryText: text,
+        fullPrimaryText,
         tasksText,
         mutantsText,
         fileName: primaryFile.name,

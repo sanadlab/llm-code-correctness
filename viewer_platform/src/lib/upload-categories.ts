@@ -70,15 +70,18 @@ export const UPLOAD_CATEGORIES: UploadCategory[] = [
   {
     id: "confound_candidates",
     label: "Phase 1 · confound_candidates.jsonl",
-    description: "LLM confound candidates (optional mutants join for source code).",
+    description:
+      "Confound rows — add tasks.jsonl (canonical) and validated_mutants.jsonl (source mutant) for diffs.",
     schema: "confound_candidates",
+    needsTasksJoin: true,
     needsMutantsJoin: true,
     defaultLimit: 200,
   },
   {
     id: "validated_confounded",
     label: "Phase 1 · validated_confounded.jsonl",
-    description: "Validated confounds (optional tasks + mutants joins).",
+    description:
+      "Validated confounds — add tasks.jsonl (canonical) and validated_mutants.jsonl (source mutant) for diffs.",
     schema: "validated_confounded",
     needsTasksJoin: true,
     needsMutantsJoin: true,

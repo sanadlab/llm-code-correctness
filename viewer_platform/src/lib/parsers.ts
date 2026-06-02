@@ -88,10 +88,9 @@ function taskFromMap(
 function parseOperatorCodeFromMutantId(
   mutantId: string,
 ): { code: string; name: string } | null {
-  const parts = mutantId.split("__");
-  if (parts.length < 3) return null;
-  const code = parts[parts.length - 2];
-  if (!code || code === "confound") return null;
+  const match = mutantId.match(/__([A-Z]{2,6})__/);
+  const code = match?.[1];
+  if (!code) return null;
   return { code, name: code };
 }
 
@@ -104,6 +103,16 @@ function siteHint(site: Record<string, unknown> | undefined): string | undefined
     return `${site.original} → ${site.replacement}`;
   }
   return undefined;
+}
+
+function normalizeCode(raw: unknown): string {
+  const text = String(raw ?? "");
+  // Some upload sources serialize code with literal "\n" instead of real newlines.
+  // Only decode in that case so we do not alter legitimate escaped literals.
+  if (!text.includes("\n") && text.includes("\\n")) {
+    return text.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+  }
+  return text;
 }
 
 const EMPTY_CODE = {
@@ -154,7 +163,7 @@ function buildFromTasks(records: Record<string, unknown>[]): ReviewItem[] {
           {
             role: "canonical",
             id: `${task.task_id}__canonical`,
-            code: String(task.canonical_solution),
+            code: normalizeCode(task.canonical_solution),
             label: 1,
           },
         ],
@@ -180,7 +189,7 @@ function buildFromValidatedTasks(records: Record<string, unknown>[]): ReviewItem
           {
             role: "canonical",
             id: `${task.task_id}__canonical`,
-            code: String(task.canonical_solution),
+            code: normalizeCode(task.canonical_solution),
             label: 1,
             status: task.canonical_status,
           },
@@ -237,7 +246,7 @@ function buildFromMutants(
       variants.push({
         role: "canonical",
         id: `${mutant.task_id}__canonical`,
-        code: task.canonical_solution,
+        code: normalizeCode(task.canonical_solution),
         label: 1,
       });
     }
@@ -245,7 +254,7 @@ function buildFromMutants(
     variants.push({
       role: "mutant",
       id: mutant.mutant_id,
-      code: mutant.code,
+      code: normalizeCode(mutant.code),
       label: 0,
       status: mutant.status,
       operator: mutant.operator,
@@ -290,49 +299,59 @@ function buildFromConfounds(
     if (!row.variant_id || !row.code) continue;
     const confound = row as ConfoundRow;
     const task = taskFromMap(tasks, confound.task_id);
-    const mutantCode = mutantIndex?.get(confound.source_mutant_id);
+    const sourceMutantId =
+      typeof confound.source_mutant_id === "string"
+        ? confound.source_mutant_id
+        : confound.source_mutant_id !== undefined
+          ? String(confound.source_mutant_id)
+          : undefined;
+
+    const mutantCode =
+      sourceMutantId && mutantIndex ? mutantIndex.get(sourceMutantId) : undefined;
     const variants: CodeVariant[] = [];
 
     if (task?.canonical_solution) {
       variants.push({
         role: "canonical",
         id: `${confound.task_id}__canonical`,
-        code: task.canonical_solution,
+        code: normalizeCode(task.canonical_solution),
         label: 1,
       });
     }
 
-    if (mutantCode) {
+    if (typeof mutantCode === "string" && mutantCode.length > 0 && sourceMutantId) {
       variants.push({
         role: "mutant",
-        id: confound.source_mutant_id,
-        code: mutantCode,
+        id: sourceMutantId,
+        code: normalizeCode(mutantCode),
         label: 0,
-        subtitle: confound.source_mutant_id,
+        subtitle: sourceMutantId,
       });
     }
 
     variants.push({
       role: "confound",
       id: confound.variant_id,
-      code: confound.code,
+      code: normalizeCode(confound.code),
       label: 0,
       status: confound.status,
       subtitle: confound.backend,
     });
 
-    const opFromId = parseOperatorCodeFromMutantId(confound.source_mutant_id);
+    const opFromId = sourceMutantId
+      ? parseOperatorCodeFromMutantId(sourceMutantId)
+      : null;
     items.push(
       makeBundle({
         id: confound.variant_id,
         taskId: confound.task_id,
         title: confound.variant_id,
-        subtitle: `source mutant: ${confound.source_mutant_id}`,
+        subtitle: `source mutant: ${sourceMutantId ?? "unknown"}`,
         prompt: task?.instruct_prompt ?? task?.complete_prompt,
         test: task?.test,
         variants,
         metadata: {
-          source_mutant_id: confound.source_mutant_id,
+          source_mutant_id: sourceMutantId,
           operator_code: opFromId?.code,
           operator: opFromId?.name,
           backend: confound.backend,
@@ -379,14 +398,14 @@ function buildFromFrozen(records: Record<string, unknown>[]): ReviewItem[] {
         variants.push({
           role: "canonical",
           id: `${frozen.task_id}__canonical`,
-          code: canonical,
+          code: normalizeCode(canonical),
           label: 1,
         });
       }
       variants.push({
         role: "mutant",
         id: mutant.mutant_id,
-        code: mutant.code,
+        code: normalizeCode(mutant.code),
         label: 0,
         status: mutant.status,
         operator: mutant.operator,
@@ -401,7 +420,7 @@ function buildFromFrozen(records: Record<string, unknown>[]): ReviewItem[] {
         variants.push({
           role: "confound",
           id: confound.variant_id,
-          code: confound.code,
+          code: normalizeCode(confound.code),
           label: 0,
           status: confound.status,
           subtitle: confound.backend,
@@ -447,7 +466,7 @@ function implToVariant(impl: SplitImpl, role: CodeVariant["role"]): CodeVariant 
   return {
     role,
     id: impl.implementation_id,
-    code: impl.code,
+    code: normalizeCode(impl.code),
     label: impl.label,
     operator: impl.operator,
     operator_code: impl.operator_code,
@@ -476,55 +495,109 @@ function buildFromSplitRows(
       (impl): impl is SplitImpl => typeof impl === "object" && impl !== null,
     );
 
-    const canonicalImpl = objectImpls.find((impl) => impl.kind === "canonical");
-    const labelCanonical =
-      canonicalImpl ??
-      objectImpls.find((impl) => impl.label === 1 && impl.kind !== "mutant" && impl.kind !== "confound");
+    const canonicalImpl =
+      objectImpls.find((impl) => impl.kind === "canonical") ??
+      objectImpls.find(
+        (impl) =>
+          impl.label === 1 && impl.kind !== "mutant" && impl.kind !== "confound",
+      );
 
-    const mutantImpl = objectImpls.find((impl) => impl.kind === "mutant");
-    const confoundImpls = objectImpls.filter((impl) => impl.kind === "confound");
-    const confoundImpl = confoundImpls[0];
-
-    const variants: CodeVariant[] = [];
-    if (labelCanonical) {
-      variants.push(implToVariant(labelCanonical, "canonical"));
-    }
-    if (mutantImpl) {
-      variants.push(implToVariant(mutantImpl, "mutant"));
-    }
-    if (confoundImpl) {
-      const sourceMutantId = confoundImpl.implementation_id.replace(/__confound__\d+$/, "");
-      const inlineMutant = objectImpls.find((m) => m.implementation_id === sourceMutantId);
-      if (inlineMutant && !mutantImpl) {
-        variants.push(implToVariant(inlineMutant, "mutant"));
-      }
-      variants.push(implToVariant(confoundImpl, "confound"));
-    }
-
-    if (variants.length === 0) continue;
-
-    const roles = variants.map((v) => v.role).join(" · ");
-    items.push(
-      makeBundle({
-        id: taskId,
-        taskId,
-        title: taskId,
-        subtitle: roles,
-        prompt,
-        variants,
-        metadata: {
-          split_schema: schema,
-          entry_point: row.entry_point,
-          operator: mutantImpl?.operator,
-          operator_code: mutantImpl?.operator_code,
-          site: mutantImpl?.site,
-          failure_fingerprint: mutantImpl?.failure_fingerprint,
-          mutant_id: mutantImpl?.implementation_id,
-          implementation_ids: objectImpls.map((i) => i.implementation_id),
-          extra_confounds: confoundImpls.slice(1).map((c) => c.implementation_id),
-        },
-      }),
+    const mutants = objectImpls.filter((impl) => impl.kind === "mutant");
+    const confounds = objectImpls.filter((impl) => impl.kind === "confound");
+    const variantsByImplId = new Map(
+      objectImpls.map((impl) => [impl.implementation_id, impl]),
     );
+
+    // Emit one card per confound when present so reviewers can go variant-by-variant.
+    if (confounds.length > 0) {
+      for (const confoundImpl of confounds) {
+        const sourceMutantId = confoundImpl.implementation_id.replace(
+          /__confound__\d+$/,
+          "",
+        );
+        const sourceMutant =
+          variantsByImplId.get(sourceMutantId) ??
+          mutants.find((m) => m.implementation_id === sourceMutantId) ??
+          mutants[0];
+
+        const variants: CodeVariant[] = [];
+        if (canonicalImpl) variants.push(implToVariant(canonicalImpl, "canonical"));
+        if (sourceMutant) variants.push(implToVariant(sourceMutant, "mutant"));
+        variants.push(implToVariant(confoundImpl, "confound"));
+
+        items.push(
+          makeBundle({
+            id: confoundImpl.implementation_id,
+            taskId,
+            title: confoundImpl.implementation_id,
+            subtitle: "canonical · mutant · confound",
+            prompt,
+            variants,
+            metadata: {
+              split_schema: schema,
+              entry_point: row.entry_point,
+              operator: sourceMutant?.operator,
+              operator_code: sourceMutant?.operator_code,
+              site: sourceMutant?.site,
+              failure_fingerprint:
+                confoundImpl.failure_fingerprint ?? sourceMutant?.failure_fingerprint,
+              mutant_id: sourceMutant?.implementation_id,
+              implementation_ids: objectImpls.map((i) => i.implementation_id),
+            },
+          }),
+        );
+      }
+      continue;
+    }
+
+    // If there are no confounds, emit one card per mutant.
+    if (mutants.length > 0) {
+      for (const mutant of mutants) {
+        const variants: CodeVariant[] = [];
+        if (canonicalImpl) variants.push(implToVariant(canonicalImpl, "canonical"));
+        variants.push(implToVariant(mutant, "mutant"));
+        items.push(
+          makeBundle({
+            id: mutant.implementation_id,
+            taskId,
+            title: mutant.implementation_id,
+            subtitle: "canonical · mutant",
+            prompt,
+            variants,
+            metadata: {
+              split_schema: schema,
+              entry_point: row.entry_point,
+              operator: mutant.operator,
+              operator_code: mutant.operator_code,
+              site: mutant.site,
+              failure_fingerprint: mutant.failure_fingerprint,
+              mutant_id: mutant.implementation_id,
+              implementation_ids: objectImpls.map((i) => i.implementation_id),
+            },
+          }),
+        );
+      }
+      continue;
+    }
+
+    // Fallback for canonical-only rows.
+    if (canonicalImpl) {
+      items.push(
+        makeBundle({
+          id: canonicalImpl.implementation_id,
+          taskId,
+          title: canonicalImpl.implementation_id,
+          subtitle: "canonical",
+          prompt,
+          variants: [implToVariant(canonicalImpl, "canonical")],
+          metadata: {
+            split_schema: schema,
+            entry_point: row.entry_point,
+            implementation_ids: objectImpls.map((i) => i.implementation_id),
+          },
+        }),
+      );
+    }
   }
   return items;
 }
@@ -578,8 +651,12 @@ export function recordsToReviewItems(
 function buildMutantIndexFromText(text: string): Map<string, string> {
   const index = new Map<string, string>();
   for (const row of parseJsonl(text)) {
-    if (row.mutant_id && row.code) {
-      index.set(String(row.mutant_id), String(row.code));
+    const rawId =
+      row.mutant_id ?? row.implementation_id ?? row.id ?? row.source_mutant_id;
+    const rawCode = row.code ?? row.mutant_code ?? row.implementation_code;
+
+    if (typeof rawId === "string" && typeof rawCode === "string") {
+      index.set(rawId, rawCode);
     }
   }
   return index;
