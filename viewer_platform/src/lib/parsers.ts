@@ -662,6 +662,36 @@ function buildMutantIndexFromText(text: string): Map<string, string> {
   return index;
 }
 
+function buildMutantIndexFromTextForIds(
+  text: string,
+  mutantIds: Set<string>,
+): Map<string, string> {
+  const index = new Map<string, string>();
+  if (mutantIds.size === 0) return index;
+
+  const lines = text.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let row: Record<string, unknown>;
+    try {
+      row = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    const rawId =
+      row.mutant_id ?? row.implementation_id ?? row.id ?? row.source_mutant_id;
+    const rawCode = row.code ?? row.mutant_code ?? row.implementation_code;
+    if (typeof rawId !== "string" || !mutantIds.has(rawId)) continue;
+    if (typeof rawCode === "string") {
+      index.set(rawId, rawCode);
+      if (index.size >= mutantIds.size) break;
+    }
+  }
+
+  return index;
+}
+
 export function buildDataset(
   name: string,
   primaryText: string,
@@ -687,7 +717,18 @@ export function buildDataset(
 
   const mutantIndex =
     options.mutantIndex ??
-    (options.mutantsText ? buildMutantIndexFromText(options.mutantsText) : undefined);
+    (options.mutantsText
+      ? schema === "confound_candidates" || schema === "validated_confounded"
+        ? buildMutantIndexFromTextForIds(
+            options.mutantsText,
+            new Set(
+              primaryRecords
+                .map((r) => r.source_mutant_id)
+                .filter((id): id is string => typeof id === "string"),
+            ),
+          )
+        : buildMutantIndexFromText(options.mutantsText)
+      : undefined);
 
   const items = recordsToReviewItems(primaryRecords, schema, {
     tasksMap: tasksMap.size > 0 ? tasksMap : undefined,
