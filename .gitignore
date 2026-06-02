@@ -45,7 +45,10 @@ env/
 *.swo
 
 # Personal Copilot/Claude/skill customizations (per-developer)
-.github/
+# Ignore all of .github except shared workflows (viewer deploy sync).
+.github/*
+!.github/workflows/
+!.github/workflows/**
 
 # Secrets and API keys
 .secrets.json

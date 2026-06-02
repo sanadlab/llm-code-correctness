@@ -178,3 +178,10 @@ decompress-artifacts:
 	else \
 		echo "Missing $(RESULTS_ARCHIVE). Run 'make download-artifacts' first."; \
 	fi
+
+# Push viewer_platform/ to a standalone Vercel deploy repo (see viewer_platform/DEPLOY.md).
+# Requires: VIEWER_DEPLOY_REPO=sanadlab/llm-code-correctness-viewer
+# Optional: VIEWER_DEPLOY_TOKEN=ghp_...
+sync-viewer-deploy:
+	@chmod +x scripts/sync-viewer-deploy-repo.sh
+	@./scripts/sync-viewer-deploy-repo.sh
