@@ -373,6 +373,15 @@ class AOI(MutationOperator):
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                # Keep this operator conservative: do not mutate names that are
+                # used as call targets, since "sum(coins)" -> "(sum + 1)(coins)"
+                # is not a meaningful arithmetic change.
+                if any(
+                    isinstance(parent, ast.Call) and parent.func is node
+                    for stmt in body
+                    for parent in ast.walk(stmt)
+                ):
+                    continue
                 # a -> a + 1
                 new_add = ast.BinOp(
                     left=copy.deepcopy(node),
@@ -549,6 +558,15 @@ class UOI(MutationOperator):
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                # Keep unary insertion conservative: do not rewrite names that
+                # are being used as call targets, since "sum(x)" -> "(not sum)(x)"
+                # or "(-sum)(x)" is not a meaningful mutation.
+                if any(
+                    isinstance(parent, ast.Call) and parent.func is node
+                    for stmt in body
+                    for parent in ast.walk(stmt)
+                ):
+                    continue
                 # -x
                 neg = ast.UnaryOp(op=ast.USub(), operand=copy.deepcopy(node))
                 new_tree_neg = _deep_replace(tree, node, neg)
