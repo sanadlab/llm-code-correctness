@@ -106,7 +106,7 @@ def _parse_framings(pairs: Sequence[str], data_splits: Sequence[str]) -> Dict[st
 
 
 def _protocol_defaults(protocol: str) -> Dict[str, str]:
-    if protocol == "function":
+    if protocol == "mean_diff":
         return {"fit": "function", "validate": "neutral", "test": "neutral"}
     if protocol == "pca":
         return {"fit": "raw", "validate": "concept", "test": "concept"}
@@ -338,7 +338,7 @@ def parse_args() -> ExtractionConfig:
         help="Dataset root (default: dataset/icse26 or dataset/bigcodebench/phase2).",
     )
     parser.add_argument("--data-splits", nargs="+", default=["fit", "validate", "test"])
-    parser.add_argument("--protocol", choices=["pca", "function"], default=None)
+    parser.add_argument("--protocol", choices=["pca", "mean_diff"], default=None)
     parser.add_argument("--framing", default=None)
     parser.add_argument("--framings", nargs="*", default=[])
     parser.add_argument(
@@ -400,7 +400,7 @@ def parse_args() -> ExtractionConfig:
 
     verify: Optional[VerifyConfig] = None
     if args.verify:
-        if args.protocol == "function":
+        if args.protocol == "mean_diff":
             method = "mean_diff"
             fit_framing = "function"
             rep = "response_avg"
