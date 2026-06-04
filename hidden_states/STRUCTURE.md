@@ -35,7 +35,7 @@ Or invoke the script directly for one model/benchmark pair:
 python scripts/extract/cache_hidden_states.py \
   --models <hf-model-id> \
   --dataset-source icse26 --benchmark <bigcodebench or humaneval> \
-  --protocol function \
+  --protocol mean_diff \
   --data-splits validate test \
   --representations response_avg \
   --verify

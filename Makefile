@@ -148,7 +148,7 @@ download-models:
 		"$(ACTIVE_VENV_PYTHON)" scripts/util/download_models.py
 
 # ---------------------------------------------------------------------------
-# Hidden states (ICSE26 function protocol)
+# Hidden states (ICSE26 mean_diff protocol)
 # ---------------------------------------------------------------------------
 # Runs cache_hidden_states.py for each model × benchmark (8 jobs by default).
 # Override subsets, e.g.:
@@ -169,7 +169,7 @@ collect-hidden-states:
 	    "$(ACTIVE_VENV_PYTHON)" scripts/extract/cache_hidden_states.py \
 	      --models "$$model" \
 	      --dataset-source icse26 --benchmark "$$bench" \
-	      --protocol function \
+	      --protocol mean_diff \
 	      --data-splits validate test \
 	      --representations response_avg \
 	      --output-dir "$(HS_OUTPUT_DIR)" \
