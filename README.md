@@ -157,6 +157,127 @@ make collect-hidden-states HF_HOME=/path/to/my/hf-cache
 See [hidden_states/STRUCTURE.md](hidden_states/STRUCTURE.md) for output layout.
 
 
+## ICSE2026 tSNE (cache-only)
+
+This script is selector-driven (no hardcoded stage mode). It reads:
+- selected layer from `results/.../results.json`
+- hidden states from `hidden_states/.../bundle.pt`
+
+It does not run extraction or model inference.
+
+```bash
+python scripts/analysis/tsne.py \
+  --benchmark bigcodebench \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --folds 0 \
+  --layers selected \
+  --seed 7 \
+  --perplexity 30
+```
+
+Default output path format:
+`visualizations/tsne/<model_safe>/icse26/<benchmark>/<bucket>/<image_name>.png`
+
+Where `<bucket>` is:
+- `fold_<N>` for single-fold requests
+- `fold_all` when `--folds all` and layers are not explicit custom lists
+- `custom` for custom multi-fold and/or explicit multi-layer requests
+
+Filenames use a compact pattern with no prefixes before the fold id:
+- `fold_0_layer_12.png`
+- `fold_0_layer_all.png`
+- `fold_0_layer_12_13_15.png`
+
+
+Per-task mode:
+- enable with `--tasks all` or explicit `--tasks <task_id ...>`
+- each figure is per fold + per task, with subplots across selected layers
+- per-task tSNE uses `--per-task-perplexity` (default `2.0`)
+- `--task-view-mode`:
+  - `local` (default): fit tSNE on each task's 4 points
+  - `global_subset`: fit tSNE on all fold points, then display only task points
+- `--show-background`: with `global_subset`, also draw faint fold background points
+  behind the 4 highlighted task points (requires `--tasks`)
+
+Examples:
+
+```bash
+# one fold + selected layer (single figure)
+python scripts/analysis/tsne.py \
+  --benchmark bigcodebench \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --folds 0 \
+  --layers selected
+
+# one fold + all layers (single layer-grid figure)
+python scripts/analysis/tsne.py \
+  --benchmark bigcodebench \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --folds 0 \
+  --layers all
+
+# all folds + selected layer (single fold-grid figure)
+python scripts/analysis/tsne.py \
+  --benchmark bigcodebench \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --folds all \
+  --layers selected
+
+# all folds + all layers (one layer-grid figure per fold)
+python scripts/analysis/tsne.py \
+  --benchmark bigcodebench \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --folds all \
+  --layers all
+
+# custom folds + custom layers (stored under custom/)
+python scripts/analysis/tsne.py \
+  --benchmark bigcodebench \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --folds 0 3 \
+  --layers 12 13 15
+
+# per-task view (all tasks in fold 0, all layers, uses per-task perplexity default=2)
+python scripts/analysis/tsne.py \
+  --benchmark bigcodebench \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --folds 0 \
+  --layers all \
+  --tasks all
+
+# per-task view (specific task ids)
+python scripts/analysis/tsne.py \
+  --benchmark bigcodebench \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --folds 0 \
+  --layers 12 13 15 \
+  --tasks BigCodeBench/208
+
+# per-task view with global-fit + task-subset mode
+python scripts/analysis/tsne.py \
+  --benchmark bigcodebench \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --folds 0 \
+  --layers all \
+  --tasks BigCodeBench/208 \
+  --task-view-mode global_subset
+
+# same, with faint global background for manifold context
+python scripts/analysis/tsne.py \
+  --benchmark bigcodebench \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --folds 0 \
+  --layers all \
+  --tasks BigCodeBench/208 \
+  --task-view-mode global_subset \
+  --show-background
+
+```
+
+Change `--method`, `--fit-framing`, `--representation`, `--val-framing`,
+`--test-framing`, and path roots to target other ICSE2026 result/cache cells.
+
+
 ## Regenerating the vectors/results (secondary)
 You don't need to do this. Just added information. The available `vectors/` and `results/` were produced
 by the experiments in `scripts/experiments/`. The code under
