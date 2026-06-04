@@ -17,7 +17,7 @@ CPUS=16
 PARALLEL=""
 SHARDS=1
 MEM="64G"
-TIME="24:00:00"
+TIME="00:15:00"
 PYTHON_MODULE="python/3.11.3"
 FORCE=0
 RETRY_TIMEOUTS=0
@@ -25,7 +25,7 @@ RETRY_UNRESOLVED=0
 DRY_RUN=0
 
 if [[ -n "${SCRATCH:-}" ]]; then
-    ENV_DIR_DEFAULT="${SCRATCH}/envs/project-abu-dhabi"
+    ENV_DIR_DEFAULT="${SCRATCH}/envs/llm-code-correctness"
 else
     ENV_DIR_DEFAULT=""
 fi

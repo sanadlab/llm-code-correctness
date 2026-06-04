@@ -75,8 +75,10 @@ def _in_scope_variables(func_node: ast.FunctionDef) -> list[str]:
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
             names.add(node.id)
         elif isinstance(node, ast.For):
-            if isinstance(node.target, ast.Name):
-                names.add(node.target.id)
+            # Walk the loop's target to catch tuple/list unpacking
+            for target_node in ast.walk(node.target):
+                if isinstance(target_node, ast.Name) and isinstance(target_node.ctx, ast.Store):
+                    names.add(target_node.id)
     return sorted(names)
 
 

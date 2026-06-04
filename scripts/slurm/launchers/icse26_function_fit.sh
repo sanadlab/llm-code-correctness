@@ -48,7 +48,7 @@ PYTHON_MODULE="python/3.11.3"
 CUDA_MODULE="cuda/12.2.0"
 
 if [[ -n "${SCRATCH:-}" ]]; then
-    ENV_DIR="${SCRATCH}/envs/project-abu-dhabi"
+    ENV_DIR="${SCRATCH}/envs/llm-code-correctness"
     HF_HOME="${SCRATCH}/hf-models"
 else
     ENV_DIR=""
@@ -87,7 +87,7 @@ SLURM options:
   --dependency STR        SLURM dependency (e.g. afterok:12345)
 
 Environment options:
-  --env-dir PATH          Virtualenv to activate           (default: $SCRATCH/envs/project-abu-dhabi)
+  --env-dir PATH          Virtualenv to activate           (default: $SCRATCH/envs/llm-code-correctness)
   --hf-home PATH          HuggingFace cache dir            (default: $SCRATCH/hf-models)
   --python-module NAME    Module to load                   (default: python/3.11.3)
   --cuda-module NAME      Module to load                   (default: cuda/12.2.0)

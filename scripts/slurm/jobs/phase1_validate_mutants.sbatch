@@ -14,7 +14,7 @@ fi
 CONFIG=${CONFIG:-configs/phase1/bigcodebench.yaml}
 STEP=${STEP:-validate_mutants}
 PYTHON_MODULE=${PYTHON_MODULE:-python/3.11.3}
-ENV_DIR=${ENV_DIR:-${SCRATCH:-}/envs/project-abu-dhabi}
+ENV_DIR=${ENV_DIR:-${SCRATCH:-}/envs/llm-code-correctness}
 FORCE=${FORCE:-0}
 VALIDATE_PARALLEL=${VALIDATE_PARALLEL:-}
 VALIDATE_NUM_SHARDS=${VALIDATE_NUM_SHARDS:-1}
