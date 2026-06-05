@@ -3,20 +3,35 @@ set -euo pipefail
 
 # Run pairdiff cosine analysis for ALL models, plotting all layers per model.
 # Generates: one histogram per layer per model
+#
+# Configuration (optional):
+#   HIDDEN_STATES_ROOT: path to hidden states directory (default: ../hidden_states_sohaila)
+#   PYTHON_BIN: python executable (default: python)
+#
+# Usage:
+#   source ../envs/llm-code-correctness/bin/activate
+#   ./scripts/analysis/run_pairdiff_all_models.sh
+#
+# Or with custom paths:
+#   HIDDEN_STATES_ROOT=/path/to/hidden_states PYTHON_BIN=/path/to/python ./scripts/analysis/run_pairdiff_all_models.sh
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT_DIR"
 export PYTHONPATH="$ROOT_DIR"
 
+# Use environment variables with sensible defaults
+HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-./../hidden_states_sohaila}"
+PYTHON_BIN="${PYTHON_BIN:-python}"
+
 MODELS=(
   "Qwen/Qwen2.5-Coder-7B-Instruct"
-#   "codellama/CodeLlama-7b-Instruct-hf"
-#   "mistralai/Mistral-7B-Instruct-v0.3"
-#   "infly/OpenCoder-8B-Instruct"
+#    "codellama/CodeLlama-7b-Instruct-hf"
+#    "mistralai/Mistral-7B-Instruct-v0.3"
+#    "infly/OpenCoder-8B-Instruct"
 )
 
-BENCHMARK="bigcodebench"
-SPLIT="test"
+BENCHMARK="humaneval"
+SPLIT="validate"
 FOLDS=(0 1 2 3 4 5 6 7 8 9)
 MAX_TASKS=200
 
@@ -26,8 +41,8 @@ for model in "${MODELS[@]}"; do
     echo "Processing model: $model"
     echo "Fold: $fold"
     echo "=========================================="
-    /scratch/re2230/envs/llm-code-correctness/bin/python3 scripts/analysis/plot_pairdiff_reading_cosine.py \
-        --hidden-states-root /scratch/re2230/hidden_states_sohaila \
+    "$PYTHON_BIN" scripts/analysis/plot_pairdiff_reading_cosine.py \
+        --hidden-states-root "$HIDDEN_STATES_ROOT" \
         --vectors-root vectors \
         --results-root results \
         --model "$model" \
@@ -35,7 +50,6 @@ for model in "${MODELS[@]}"; do
         --split "$SPLIT" \
         --fold "$fold" \
         --layers selected \
-        --max-tasks "$MAX_TASKS" \
         --overlay \
         --output-dir "outputs/phase2_task2_cosine/selected"
     echo ""
@@ -44,8 +58,8 @@ for model in "${MODELS[@]}"; do
     echo "=========================================="
     echo "Generating fold-overlay for model: $model"
     echo "=========================================="
-    /scratch/re2230/envs/llm-code-correctness/bin/python3 scripts/analysis/plot_pairdiff_reading_cosine.py \
-        --hidden-states-root /scratch/re2230/hidden_states_sohaila \
+    "$PYTHON_BIN" scripts/analysis/plot_pairdiff_reading_cosine.py \
+        --hidden-states-root "$HIDDEN_STATES_ROOT" \
         --vectors-root vectors \
         --results-root results \
         --model "$model" \
@@ -53,7 +67,6 @@ for model in "${MODELS[@]}"; do
         --split "$SPLIT" \
         --fold 0 \
         --layers selected \
-        --max-tasks "$MAX_TASKS" \
         --overlay-folds \
         --folds "${FOLDS[@]}" \
         --output-dir "outputs/phase2_task2_cosine/selected"
