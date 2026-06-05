@@ -365,6 +365,13 @@ class VerifyConfig:
     verify_inner_fold: int = 0
 
 
+# Maps extraction --data-splits names to keys inside results detailed.json.
+_SPLIT_TO_DETAILED_KEY = {
+    "validate": "val",
+    "test": "test",
+}
+
+
 def verify_standard_fold(
     *,
     model_name: str,
@@ -375,8 +382,14 @@ def verify_standard_fold(
     hidden_states_root: Path,
     verify: VerifyConfig,
     representation: Representation,
+    data_splits: Sequence[str],
+    framings: Mapping[str, str],
 ) -> None:
-    """Compare cached val/test projections to ``detailed.json`` for one fold."""
+    """Compare cached projections to ``detailed.json`` for one fold.
+
+    Only splits present in ``data_splits`` are checked (typically ``validate``
+    and/or ``test``). ``fit`` is skipped: ``detailed.json`` has no fit scores.
+    """
     common = vector_common_path(
         model_name,
         split_family,
@@ -406,14 +419,45 @@ def verify_standard_fold(
     with open(detailed_path) as f:
         detailed = json.load(f)
 
-    for split_name, framing in (("validate", verify.val_framing), ("test", verify.test_framing)):
+    splits_to_check: List[Tuple[str, str]] = []
+    for data_split in data_splits:
+        if data_split == "fit":
+            logger.warning(
+                "skipping verification for fit (fold=%d): detailed.json has no fit scores",
+                fold,
+            )
+            continue
+        detailed_key = _SPLIT_TO_DETAILED_KEY.get(data_split)
+        if detailed_key is None:
+            logger.warning(
+                "skipping verification for unknown data split %r (fold=%d)",
+                data_split,
+                fold,
+            )
+            continue
+        if data_split not in framings:
+            raise VerificationError(
+                f"missing framing for data split {data_split!r} in verify config"
+            )
+        splits_to_check.append((data_split, detailed_key))
+
+    if not splits_to_check:
+        raise VerificationError(
+            f"no verifiable splits in --data-splits {list(data_splits)!r} "
+            f"(fold={fold}); use validate and/or test with --verify"
+        )
+
+    from src.hidden_states import HiddenStateBundle
+
+    for data_split, detailed_key in splits_to_check:
+        framing = framings[data_split]
         bundle_dir = bundle_output_dir(
             hidden_states_root,
             model_name,
             split_family,
             dataset,
             distribution,
-            split_name,
+            data_split,
             framing,
             fold,
         )
@@ -421,15 +465,13 @@ def verify_standard_fold(
         if not bundle_path.is_file():
             raise VerificationError(f"missing cached bundle: {bundle_path}")
 
-        from src.hidden_states import HiddenStateBundle
-
         bundle = HiddenStateBundle.load(bundle_path)
-        ref = detailed["val" if split_name == "validate" else "test"]
+        ref = detailed[detailed_key]
         layers, scores = _scores_for_sample_order(
             bundle, representation, direction, ref["sample_ids"]
         )
         _compare_score_tensors(
-            split_name=split_name,
+            split_name=data_split,
             layers=layers,
             computed=scores,
             reference_layers=detailed["layers"],
@@ -440,4 +482,4 @@ def verify_standard_fold(
             corr_min=verify.corr_min,
             acc_atol=verify.acc_atol,
         )
-        logger.info("verify OK: %s fold=%d %s", split_name, fold, bundle_dir)
+        logger.info("verify OK: %s fold=%d %s", data_split, fold, bundle_dir)

@@ -175,8 +175,10 @@ python scripts/analysis/tsne.py \
   --perplexity 30
 ```
 
-Default output path format:
-`visualizations/tsne/<model_safe>/icse26/<benchmark>/<bucket>/<image_name>.png`
+Default output path format (dataset origin from `--split-family`):
+- ICSE26: `visualizations/tsne/<model_safe>/icse26/<benchmark>/<bucket>/<image_name>.png`
+- Mutation_DS (e.g. `s1_baseline`): `visualizations/tsne/<model_safe>/mutation_ds/<split-family>/<benchmark>/<bucket>/<image_name>.png`
+- OOD (e.g. `ood_mbpp`): `visualizations/tsne/<model_safe>/ood/<split-family>/<benchmark>/...`
 
 Where `<bucket>` is:
 - `fold_<N>` for single-fold requests
@@ -275,7 +277,28 @@ python scripts/analysis/tsne.py \
 ```
 
 Change `--method`, `--fit-framing`, `--representation`, `--val-framing`,
-`--test-framing`, and path roots to target other ICSE2026 result/cache cells.
+`--test-framing`, `--split-family`, and path roots to target other result/cache cells.
+
+Mutation_DS example (`s1_baseline`):
+
+```bash
+python scripts/analysis/tsne.py \
+  --benchmark bigcodebench \
+  --split-family s1_baseline \
+  --model codellama/CodeLlama-7b-Instruct-hf \
+  --method mean_diff \
+  --fit-framing function \
+  --representation response_avg \
+  --val-framing neutral \
+  --test-framing neutral \
+  --folds 0 \
+  --layers all
+```
+
+Per-task mode (`--tasks`) reads task outcomes from
+`<split-dir>/<split-family>_<benchmark>.jsonl` (e.g.
+`dataset/bigcodebench/phase2/s8_single_arithmetic/s8_single_arithmetic_bigcodebench.jsonl`),
+not from the ICSE26 aggregate file.
 
 
 ## Regenerating the vectors/results (secondary)

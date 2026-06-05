@@ -75,9 +75,11 @@ the **overall pattern** of scores matches the reference run.
 ## How verification works
 
 When you pass `--verify` (or only check with `--verify-only`), the script, for
-each fold:
+each fold, verifies only the splits listed in `--data-splits` (e.g. `test`
+alone, or `validate test`). `fit` is never score-checked (`detailed.json` has no
+fit section).
 
-1. Loads the cached `bundle.pt` for validate and test.
+1. Loads the cached `bundle.pt` for each requested verifiable split.
 2. Loads the matching `direction.pt` and `detailed.json` from the earlier
   experiment.
 3. For each implementation, projects its cached activations onto the direction

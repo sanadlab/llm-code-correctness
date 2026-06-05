@@ -321,6 +321,8 @@ def run_verification(config: ExtractionConfig) -> None:
                     hidden_states_root=config.output_dir,
                     verify=config.verify,
                     representation=rep,
+                    data_splits=config.data_splits,
+                    framings=config.framings,
                 )
 
 

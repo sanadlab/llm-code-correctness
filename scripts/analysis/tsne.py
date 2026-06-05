@@ -1,4 +1,4 @@
-"""ICSE2026 cache-only tSNE visualization with dynamic selectors.
+"""Cache-only tSNE visualization with dynamic selectors (ICSE26, Mutation_DS, OOD).
 
 This script reads only precomputed artifacts:
   - selected layers from `results/.../results.json`
@@ -22,6 +22,33 @@ import torch
 from sklearn.manifold import TSNE
 
 from src.hidden_states.cache import bundle_output_dir, safe_model_dir
+
+DEFAULT_ICSE26_DATA_ROOT = Path("dataset/icse26")
+DEFAULT_MUTATION_PHASE2_ROOT = Path("dataset/bigcodebench/phase2")
+
+
+def _splits_dir(
+    *,
+    split_family: str,
+    benchmark: str,
+    data_root: Path,
+) -> Path:
+    """Directory containing ``manifest.json`` and fold_* subdirs for a split family."""
+    if split_family == "icse26":
+        return data_root / benchmark
+
+    if (data_root / "manifest.json").is_file():
+        return data_root
+    nested = data_root / split_family
+    if (nested / "manifest.json").is_file():
+        return nested
+    default = DEFAULT_MUTATION_PHASE2_ROOT / split_family
+    if (default / "manifest.json").is_file():
+        return default
+    raise FileNotFoundError(
+        f"could not locate splits for {split_family!r}; "
+        f"tried {data_root}, {nested}, and {default}"
+    )
 
 
 def _read_selected_layer(
@@ -61,8 +88,15 @@ def _read_selected_layer(
     return int(payload["selected_layer"])
 
 
-def _resolve_all_folds(data_root: Path, benchmark: str) -> List[int]:
-    manifest_path = data_root / benchmark / "manifest.json"
+def _resolve_all_folds(
+    *,
+    split_family: str,
+    data_root: Path,
+    benchmark: str,
+) -> List[int]:
+    manifest_path = _splits_dir(
+        split_family=split_family, benchmark=benchmark, data_root=data_root
+    ) / "manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError(f"missing manifest for --folds all: {manifest_path}")
     with open(manifest_path) as f:
@@ -71,9 +105,17 @@ def _resolve_all_folds(data_root: Path, benchmark: str) -> List[int]:
     return list(range(num_folds))
 
 
-def _parse_fold_selector(folds_arg: Sequence[str], data_root: Path, benchmark: str) -> List[int]:
+def _parse_fold_selector(
+    folds_arg: Sequence[str],
+    *,
+    split_family: str,
+    data_root: Path,
+    benchmark: str,
+) -> List[int]:
     if len(folds_arg) == 1 and folds_arg[0] == "all":
-        return _resolve_all_folds(data_root, benchmark)
+        return _resolve_all_folds(
+            split_family=split_family, data_root=data_root, benchmark=benchmark
+        )
     try:
         parsed = sorted({int(x) for x in folds_arg})
     except ValueError as exc:
@@ -118,12 +160,43 @@ def _safe_task_id(task_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "__", leaf)
 
 
-def _dataset_results_path(data_root: Path, benchmark: str) -> Path:
-    return data_root / benchmark / f"icse26_{benchmark}.jsonl"
+def _tsne_output_path_parts(split_family: str) -> Tuple[str, ...]:
+    """Path segments between ``<model_safe>/`` and ``<benchmark>/`` in output dirs."""
+    if split_family == "icse26":
+        return ("icse26",)
+    if split_family.startswith("ood_"):
+        return ("ood", split_family)
+    return ("mutation_ds", split_family)
+
+
+def _tsne_dataset_label(split_family: str) -> str:
+    if split_family == "icse26":
+        return "ICSE26"
+    if split_family.startswith("ood_"):
+        return f"OOD ({split_family})"
+    return f"Mutation_DS ({split_family})"
+
+
+def _dataset_results_path(
+    *,
+    split_family: str,
+    benchmark: str,
+    data_root: Path,
+) -> Path:
+    """Per-task monitoring outcomes JSONL (ICSE26 or Mutation_DS phase2 layout)."""
+    splits_dir = _splits_dir(
+        split_family=split_family, benchmark=benchmark, data_root=data_root
+    )
+    if split_family == "icse26":
+        filename = f"icse26_{benchmark}.jsonl"
+    else:
+        filename = f"{split_family}_{benchmark}.jsonl"
+    return splits_dir / filename
 
 
 def _load_task_correctness_index(
     *,
+    split_family: str,
     data_root: Path,
     benchmark: str,
     model: str,
@@ -133,7 +206,9 @@ def _load_task_correctness_index(
     val_framing: str,
     test_framing: str,
 ) -> Dict[Tuple[int, str], bool]:
-    results_path = _dataset_results_path(data_root, benchmark)
+    results_path = _dataset_results_path(
+        split_family=split_family, benchmark=benchmark, data_root=data_root
+    )
     if not results_path.is_file():
         raise FileNotFoundError(f"missing dataset results file: {results_path}")
 
@@ -546,12 +621,19 @@ def run_dynamic(
         )
         return tsne_cache[key]
 
-    out_root = output_dir / safe_model_dir(model) / "icse26" / benchmark
+    dataset_label = _tsne_dataset_label(split_family)
+    out_root = (
+        output_dir
+        / safe_model_dir(model)
+        / Path(*_tsne_output_path_parts(split_family))
+        / benchmark
+    )
     outputs: List[str] = []
 
     correctness_index: Dict[Tuple[int, str], bool] | None = None
     if task_mode:
         correctness_index = _load_task_correctness_index(
+            split_family=split_family,
             data_root=data_root,
             benchmark=benchmark,
             model=model,
@@ -610,11 +692,17 @@ def run_dynamic(
                     mode_suffix = f"{mode_suffix}_bg"
                 lookup_key = (fold, task_id)
                 if lookup_key not in correctness_index:
+                    results_path = _dataset_results_path(
+                        split_family=split_family,
+                        benchmark=benchmark,
+                        data_root=data_root,
+                    )
                     raise KeyError(
                         f"no dataset result for fold={fold}, task_id={task_id!r} "
                         f"(model={safe_model_dir(model)!r}, method={method!r}, "
                         f"framing={fit_framing!r}, rep_type={representation!r}, "
-                        f"val_condition={val_framing!r}, test_condition={test_framing!r})"
+                        f"val_condition={val_framing!r}, test_condition={test_framing!r}, "
+                        f"results_file={results_path})"
                     )
                 outcome = "success" if correctness_index[lookup_key] else "fail"
                 out_path = (
@@ -627,7 +715,7 @@ def run_dynamic(
                 _build_layer_grid(
                     panels=panels,
                     selected_layer=int(fold_data[fold]["selected_layer"]),
-                    fig_title=f"ICSE26 {benchmark} | fold={fold} | task={task_id}",
+                    fig_title=f"{dataset_label} {benchmark} | fold={fold} | task={task_id}",
                     out_path=out_path,
                 )
                 outputs.append(str(out_path))
@@ -641,7 +729,7 @@ def run_dynamic(
                 coords=_coords_for(fold, layer),
                 is_correct=fold_data[fold]["is_correct"],
                 is_incorrect=fold_data[fold]["is_incorrect"],
-                title=f"ICSE26 {benchmark} | fold={fold}, layer={layer}",
+                title=f"{dataset_label} {benchmark} | fold={fold}, layer={layer}",
                 out_path=out_path,
             )
             outputs.append(str(out_path))
@@ -665,7 +753,7 @@ def run_dynamic(
             _build_layer_grid(
                 panels=panels,
                 selected_layer=int(fold_data[fold]["selected_layer"]),
-                fig_title=f"ICSE26 {benchmark} | fold={fold}",
+                fig_title=f"{dataset_label} {benchmark} | fold={fold}",
                 out_path=out_path,
             )
             outputs.append(str(out_path))
@@ -694,7 +782,7 @@ def run_dynamic(
             out_path = out_root / container / f"{container}_layer_{layer_tag}.png"
             _build_fold_grid(
                 panels=panels,
-                fig_title=f"ICSE26 {benchmark} | folds={folds}",
+                fig_title=f"{dataset_label} {benchmark} | folds={folds}",
                 out_path=out_path,
             )
             outputs.append(str(out_path))
@@ -726,13 +814,15 @@ def run_dynamic(
                 _build_layer_grid(
                     panels=panels,
                     selected_layer=int(fold_data[fold]["selected_layer"]),
-                    fig_title=f"ICSE26 {benchmark} | fold={fold}",
+                    fig_title=f"{dataset_label} {benchmark} | fold={fold}",
                     out_path=out_path,
                 )
                 outputs.append(str(out_path))
 
     summary: Dict[str, object] = {
         "model": model,
+        "split_family": split_family,
+        "dataset_label": dataset_label,
         "benchmark": benchmark,
         "data_root": str(data_root),
         "folds": list(folds),
@@ -751,13 +841,25 @@ def run_dynamic(
     }
     if task_mode:
         summary["task_outcome_layout"] = "tasks_success_fail_flat"
+        summary["dataset_results_path"] = str(
+            _dataset_results_path(
+                split_family=split_family,
+                benchmark=benchmark,
+                data_root=data_root,
+            )
+        )
     return summary
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--benchmark", choices=["bigcodebench", "humaneval"], required=True)
-    parser.add_argument("--data-root", default="dataset/icse26")
+    parser.add_argument(
+        "--data-root",
+        default="dataset/icse26",
+        help="ICSE26 root (dataset/icse26) or Mutation_DS split/phase2 dir; "
+             "used for --folds all manifests and --tasks outcome JSONL.",
+    )
     parser.add_argument("--model", required=True)
     parser.add_argument(
         "--folds",
@@ -804,12 +906,18 @@ def main() -> None:
     parser.add_argument("--output-dir", default="visualizations/tsne")
     args = parser.parse_args()
 
+    data_root = Path(args.data_root)
     folds = _parse_fold_selector(
-        folds_arg=args.folds,
-        data_root=Path(args.data_root),
+        args.folds,
+        split_family=args.split_family,
+        data_root=data_root,
         benchmark=args.benchmark,
     )
-    all_folds = _resolve_all_folds(Path(args.data_root), args.benchmark)
+    all_folds = _resolve_all_folds(
+        split_family=args.split_family,
+        data_root=data_root,
+        benchmark=args.benchmark,
+    )
     folds_is_all = folds == all_folds
     layer_mode, explicit_layers = _parse_layer_selector(args.layers)
     task_mode, explicit_task_ids = _parse_task_selector(args.tasks)
@@ -823,7 +931,7 @@ def main() -> None:
     summary = run_dynamic(
         hidden_states_root=Path(args.hidden_states_root),
         results_root=Path(args.results_root),
-        data_root=Path(args.data_root),
+        data_root=data_root,
         benchmark=args.benchmark,
         model=args.model,
         folds=folds,
