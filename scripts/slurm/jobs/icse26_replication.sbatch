@@ -2,7 +2,8 @@
 #SBATCH --job-name=icse26_replication
 #SBATCH --output=logs/slurm/icse26_replication.%j.out
 #SBATCH --error=logs/slurm/icse26_replication.%j.err
-#SBATCH --partition=nvidia
+#SBATCH --partition=cs
+#SBATCH --account=condo_cs_nadi
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G

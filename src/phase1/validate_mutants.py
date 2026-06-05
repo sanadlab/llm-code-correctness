@@ -6,6 +6,7 @@ for killed mutants. Writes validated_mutants.jsonl.
 """
 
 import hashlib
+import math
 import os
 import re
 from pathlib import Path
@@ -15,10 +16,16 @@ from src.phase1.docker_eval import DockerEvalBatchTimeout, run_docker_eval
 from src.phase1.io_utils import append_jsonl, read_jsonl, write_jsonl
 
 
+# Each rung is (max_batch_size, timeout_seconds).  On timeout the batch splits to
+# the next smaller rung instead of mass-marking rows as timeout.  Budgets assume
+# ~12s per mutant wall time at parallel=8 (min_time_limit=10 + overhead).
 TIMEOUT_SPLIT_LADDER: tuple[tuple[int, int], ...] = (
-    (2000, 20 * 60),
-    (1000, 10 * 60),
-    (500, 5 * 60),
+    (2000, 45 * 60),
+    (1000, 25 * 60),
+    (500, 15 * 60),
+    (250, 10 * 60),
+    (100, 8 * 60),
+    (50, 5 * 60),
 )
 
 RESUME_ALL_MISSING = "all_missing"
@@ -147,6 +154,7 @@ def validate_mutants(cfg: Phase1Config) -> None:
         f"(total={len(mutants)}, resume_mode={resume_mode}, "
         f"batch_size={cfg.validate.batch_size}, parallel={cfg.validate.parallel})..."
     )
+    _warn_batch_timeout_budget(cfg)
 
     work_dir = cfg.intermediate_dir / "mutant_eval_workdir"
     # Prefer $SCRATCH for the eval workdir to avoid filling the home filesystem
@@ -286,6 +294,32 @@ def _validate_mutant_batch(
         })
 
     return validated
+
+
+def _estimate_batch_seconds(batch_size: int, parallel: int, min_time_limit: int) -> int:
+    """Conservative wall-clock estimate for one eval batch."""
+    per_mutant = min_time_limit + 2  # test limit plus container/scheduling overhead
+    return math.ceil(batch_size / max(parallel, 1) * per_mutant)
+
+
+def _warn_batch_timeout_budget(cfg: Phase1Config) -> None:
+    batch_size = cfg.validate.batch_size
+    parallel = cfg.validate.parallel
+    budget = _get_batch_timeout_seconds(batch_size)
+    estimate = _estimate_batch_seconds(batch_size, parallel, cfg.validate.min_time_limit)
+    if estimate > budget:
+        print(
+            f"  WARN: estimated batch time ~{estimate}s exceeds timeout budget "
+            f"{budget}s at batch_size={batch_size}, parallel={parallel}. "
+            f"Reduce batch_size in config, raise --parallel, or use --cpus 16 "
+            f"--parallel 8. Otherwise batches will split repeatedly and may "
+            f"finish as bogus status=timeout rows."
+        )
+    elif estimate > int(budget * 0.8):
+        print(
+            f"  NOTE: estimated batch time ~{estimate}s is close to timeout budget "
+            f"{budget}s; consider lowering batch_size if batches start splitting."
+        )
 
 
 def _get_batch_timeout_seconds(batch_size: int) -> int:

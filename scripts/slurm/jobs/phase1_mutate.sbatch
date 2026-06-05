@@ -2,6 +2,8 @@
 #SBATCH --job-name=phase1_mutate
 #SBATCH --output=logs/slurm/phase1_mutate.%j.out
 #SBATCH --error=logs/slurm/phase1_mutate.%j.err
+#SBATCH --partition=cs
+#SBATCH --account=condo_cs_nadi
 
 set -euo pipefail
 

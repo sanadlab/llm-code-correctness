@@ -96,7 +96,9 @@ def run_docker_eval(
 
     if runtime == "singularity" and cfg.validate.sif_path:
         cmd.extend(["--sif", cfg.validate.sif_path])
-        cmd.append("--no-patch")
+        # Use patched bigcodebench from third_party/ (bind-mounted by the eval script).
+        # Stock BCB returns a partial GT timing cache on cache hit, which breaks
+        # batched validate_mutants (KeyError for tasks not in the pickle).
 
     container_name = f"phase1_eval_{label}_{os.getpid()}"
     cmd.extend(["--container-name", container_name])
@@ -151,7 +153,16 @@ def run_docker_eval(
             if runtime == "docker":
                 _stop_docker_container(container_name)
         else:
-            print(f"  Docker eval stderr:\n{stderr_text}")
+            if stderr_text.strip():
+                print(f"  Docker eval stderr:\n{stderr_text}")
+            elif stdout_text.strip():
+                print(f"  Docker eval stdout:\n{stdout_text}")
+            else:
+                eval_log = samples_path.parent / f".eval_log_*.txt"
+                print(
+                    f"  Docker eval produced no stderr/stdout; check {eval_log} "
+                    f"in {samples_path.parent}"
+                )
             raise RuntimeError(f"Docker eval failed (exit {result.returncode})")
     else:
         print(f"  Docker eval stderr:\n{stderr_text}")

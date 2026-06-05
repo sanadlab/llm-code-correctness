@@ -46,8 +46,8 @@ DATA_ROOT="${DATA_ROOT:-dataset/icse26}"
 SPLIT_FAMILY="${SPLIT_FAMILY:-icse26}"
 SPLITS_DIR="${SPLITS_DIR:-}"
 
-PARTITION="nvidia"
-ACCOUNT=""
+PARTITION="cs"
+ACCOUNT="condo_cs_nadi"
 QOS=""
 CONSTRAINT=""
 GPUS=1

@@ -9,15 +9,15 @@ JOB_SCRIPT="${SCRIPT_DIR}/../jobs/phase1_validate_mutants.sbatch"
 CONFIG="configs/phase1/bigcodebench.yaml"
 STEP="validate_mutants"
 JOB_NAME="phase1_val_mutants"
-PARTITION=""
-ACCOUNT=""
+PARTITION="cs"
+ACCOUNT="condo_cs_nadi"
 QOS=""
 DEPENDENCY=""
 CPUS=16
 PARALLEL=""
 SHARDS=1
 MEM="64G"
-TIME="00:15:00"
+TIME="12:00:00"
 PYTHON_MODULE="python/3.11.3"
 FORCE=0
 RETRY_TIMEOUTS=0
@@ -57,6 +57,11 @@ Options:
         --retry-unresolved      Keep existing pass/fail rows and revalidate prior timeout rows plus missing rows
   --dry-run               Print sbatch command without submitting
   --help                  Show this help
+
+Recommended for the full subset (~380k mutants):
+  --cpus 16 --parallel 8 --mem 64G --time 48:00:00
+  Keep batch_size at 250 in configs/phase1/bigcodebench.yaml (or lower).
+  Use --shards N to spread work across N nodes when queue allows.
 EOF
 }
 
