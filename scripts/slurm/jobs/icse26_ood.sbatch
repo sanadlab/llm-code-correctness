@@ -2,8 +2,7 @@
 #SBATCH --job-name=icse26_ood
 #SBATCH --output=logs/slurm/icse26_ood.%j.out
 #SBATCH --error=logs/slurm/icse26_ood.%j.err
-#SBATCH --partition=cs
-#SBATCH --account=condo_cs_nadi
+#SBATCH --partition=nvidia
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G

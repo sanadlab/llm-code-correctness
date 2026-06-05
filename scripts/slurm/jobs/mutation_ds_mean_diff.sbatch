@@ -2,8 +2,7 @@
 #SBATCH --job-name=mutation_ds_mean_diff
 #SBATCH --output=logs/slurm/mutation_ds_mean_diff.%j.out
 #SBATCH --error=logs/slurm/mutation_ds_mean_diff.%j.err
-#SBATCH --partition=cs
-#SBATCH --account=condo_cs_nadi
+#SBATCH --partition=nvidia
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G

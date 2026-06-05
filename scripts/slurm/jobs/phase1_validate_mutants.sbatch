@@ -2,8 +2,6 @@
 #SBATCH --job-name=phase1_val_mutants
 #SBATCH --output=logs/slurm/phase1_val_mutants.%j.out
 #SBATCH --error=logs/slurm/phase1_val_mutants.%j.err
-#SBATCH --partition=cs
-#SBATCH --account=condo_cs_nadi
 
 set -euo pipefail
 

@@ -34,8 +34,8 @@ VECTORS_DIR="${VECTORS_DIR:-vectors}"
 RESULTS_DIR="${RESULTS_DIR:-results}"
 DATA_ROOT="${DATA_ROOT:-dataset/bigcodebench/phase2}"
 
-PARTITION="cs"
-ACCOUNT="condo_cs_nadi"
+PARTITION="nvidia"
+ACCOUNT=""
 QOS=""
 CONSTRAINT=""
 GPUS=1

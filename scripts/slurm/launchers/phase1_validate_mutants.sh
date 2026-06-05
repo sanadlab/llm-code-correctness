@@ -9,8 +9,8 @@ JOB_SCRIPT="${SCRIPT_DIR}/../jobs/phase1_validate_mutants.sbatch"
 CONFIG="configs/phase1/bigcodebench.yaml"
 STEP="validate_mutants"
 JOB_NAME="phase1_val_mutants"
-PARTITION="cs"
-ACCOUNT="condo_cs_nadi"
+PARTITION=""
+ACCOUNT=""
 QOS=""
 DEPENDENCY=""
 CPUS=16
@@ -62,6 +62,9 @@ Recommended for the full subset (~380k mutants):
   --cpus 16 --parallel 8 --mem 64G --time 48:00:00
   Keep batch_size at 250 in configs/phase1/bigcodebench.yaml (or lower).
   Use --shards N to spread work across N nodes when queue allows.
+
+Priority cs partition (optional):
+  --partition cs --account condo_cs_nadi
 EOF
 }
 
