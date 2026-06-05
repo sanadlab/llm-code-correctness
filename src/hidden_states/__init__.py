@@ -28,7 +28,8 @@ class HiddenStateBundle:
         ``[N]``.
     acts:
         Mapping from representation name (e.g. ``"response_avg"``) to a
-        tensor of shape ``[N, num_layers + 1, hidden_dim]``.
+        tensor of shape ``[N, num_layers + 1, hidden_dim]``. On disk,
+        :meth:`save` always persists ``acts`` as ``float32``.
     """
 
     sample_ids: List[str]
@@ -54,7 +55,7 @@ class HiddenStateBundle:
                 "sample_ids": self.sample_ids,
                 "task_ids": self.task_ids,
                 "labels": self.labels,
-                "acts": self.acts,
+                "acts": {name: tensor.float() for name, tensor in self.acts.items()},
             },
             path,
         )
@@ -68,3 +69,38 @@ class HiddenStateBundle:
             labels=blob["labels"],
             acts=blob["acts"],
         )
+
+
+from .cache import (
+    SPLIT_TO_JSONL,
+    VerificationError,
+    VerifyConfig,
+    build_bundle_metadata,
+    bundle_is_complete,
+    bundle_output_dir,
+    fold_dir_name,
+    framing_dispatcher,
+    framing_uses_chat_template,
+    git_commit,
+    safe_model_dir,
+    verify_standard_fold,
+    write_bundle_metadata,
+)
+
+
+__all__ = [
+    "HiddenStateBundle",
+    "SPLIT_TO_JSONL",
+    "VerificationError",
+    "VerifyConfig",
+    "safe_model_dir",
+    "git_commit",
+    "fold_dir_name",
+    "framing_uses_chat_template",
+    "framing_dispatcher",
+    "bundle_output_dir",
+    "bundle_is_complete",
+    "build_bundle_metadata",
+    "write_bundle_metadata",
+    "verify_standard_fold",
+]

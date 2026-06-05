@@ -10,5 +10,6 @@ from .base import VectorMethod
 from .direction import Direction
 from .mean_diff import MeanDiff
 from .pca import PCA
+from .projection import project_all_layers
 
-__all__ = ["VectorMethod", "Direction", "MeanDiff", "PCA"]
+__all__ = ["VectorMethod", "Direction", "MeanDiff", "PCA", "project_all_layers"]
