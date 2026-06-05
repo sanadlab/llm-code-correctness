@@ -558,17 +558,22 @@ class UOI(MutationOperator):
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
+
+        # PRE-COMPUTE: Find all nodes that are being called as functions
+        # This prevents O(N^2) tree walking inside the main loop.
+        call_target_ids = {
+            id(node.func) 
+            for stmt in body 
+            for node in ast.walk(stmt) 
+            if isinstance(node, ast.Call)
+        }
+
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                # Keep unary insertion conservative: do not rewrite names that
-                # are being used as call targets, since "sum(x)" -> "(not sum)(x)"
-                # or "(-sum)(x)" is not a meaningful mutation.
-                if any(
-                    isinstance(parent, ast.Call) and parent.func is node
-                    for stmt in body
-                    for parent in ast.walk(stmt)
-                ):
+                # O(1) lookup: skip if this exact node is a call target
+                if id(node) in call_target_ids:
                     continue
+                
                 # -x
                 neg = ast.UnaryOp(op=ast.USub(), operand=copy.deepcopy(node))
                 new_tree_neg = _deep_replace(tree, node, neg)
@@ -583,6 +588,7 @@ class UOI(MutationOperator):
                     ),
                     tree=new_tree_neg,
                 ))
+                
                 # not x
                 not_node = ast.UnaryOp(op=ast.Not(), operand=copy.deepcopy(node))
                 new_tree_not = _deep_replace(tree, node, not_node)
@@ -599,8 +605,7 @@ class UOI(MutationOperator):
                 ))
                 site_idx += 1
         return mutations
-
-
+        
 class UOD(MutationOperator):
     """Remove a unary operator: -x -> x, not x -> x."""
     name = "UnaryOperatorDeletion"
