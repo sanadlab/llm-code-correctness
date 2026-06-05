@@ -6,22 +6,20 @@ set -euo pipefail
 #
 # Configuration (optional):
 #   HIDDEN_STATES_ROOT: path to hidden states directory (default: ../hidden_states_sohaila)
-#   PYTHON_BIN: python executable (default: python)
 #
 # Usage:
 #   source ../envs/llm-code-correctness/bin/activate
 #   ./scripts/analysis/run_pairdiff_all_models.sh
 #
-# Or with custom paths:
-#   HIDDEN_STATES_ROOT=/path/to/hidden_states PYTHON_BIN=/path/to/python ./scripts/analysis/run_pairdiff_all_models.sh
+# Or with custom hidden states path:
+#   HIDDEN_STATES_ROOT=/path/to/hidden_states ./scripts/analysis/run_pairdiff_all_models.sh
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT_DIR"
 export PYTHONPATH="$ROOT_DIR"
 
-# Use environment variables with sensible defaults
+# Use environment variable with sensible default
 HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-./../hidden_states_sohaila}"
-PYTHON_BIN="${PYTHON_BIN:-python}"
 
 MODELS=(
   "Qwen/Qwen2.5-Coder-7B-Instruct"
@@ -41,7 +39,7 @@ for model in "${MODELS[@]}"; do
     echo "Processing model: $model"
     echo "Fold: $fold"
     echo "=========================================="
-    "$PYTHON_BIN" scripts/analysis/plot_pairdiff_reading_cosine.py \
+    python scripts/analysis/plot_pairdiff_reading_cosine.py \
         --hidden-states-root "$HIDDEN_STATES_ROOT" \
         --vectors-root vectors \
         --results-root results \
@@ -58,7 +56,7 @@ for model in "${MODELS[@]}"; do
     echo "=========================================="
     echo "Generating fold-overlay for model: $model"
     echo "=========================================="
-    "$PYTHON_BIN" scripts/analysis/plot_pairdiff_reading_cosine.py \
+    python scripts/analysis/plot_pairdiff_reading_cosine.py \
         --hidden-states-root "$HIDDEN_STATES_ROOT" \
         --vectors-root vectors \
         --results-root results \
