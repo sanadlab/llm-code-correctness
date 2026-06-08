@@ -75,8 +75,10 @@ def _in_scope_variables(func_node: ast.FunctionDef) -> list[str]:
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
             names.add(node.id)
         elif isinstance(node, ast.For):
-            if isinstance(node.target, ast.Name):
-                names.add(node.target.id)
+            # Walk the loop's target to catch tuple/list unpacking
+            for target_node in ast.walk(node.target):
+                if isinstance(target_node, ast.Name) and isinstance(target_node.ctx, ast.Store):
+                    names.add(target_node.id)
     return sorted(names)
 
 
@@ -238,6 +240,19 @@ class AOR(MutationOperator):
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.BinOp) and type(node.op) in _ARITH_OPS:
+                # Skip operator replacement for sequence/string repetition
+                # patterns like [1,2] * 2 or "a" * 3 as these are not
+                # numeric multiplications and changing the operator would be
+                # semantically incorrect.
+                if isinstance(node.op, ast.Mult):
+                    left_seq = isinstance(node.left, (ast.List, ast.Tuple, ast.Set))
+                    right_seq = isinstance(node.right, (ast.List, ast.Tuple, ast.Set))
+                    left_str = isinstance(node.left, ast.Constant) and isinstance(node.left.value, str)
+                    right_str = isinstance(node.right, ast.Constant) and isinstance(node.right.value, str)
+                    left_is_int = isinstance(node.left, ast.Constant) and isinstance(node.left.value, int)
+                    right_is_int = isinstance(node.right, ast.Constant) and isinstance(node.right.value, int)
+                    if ((left_seq or left_str) and right_is_int) or ((right_seq or right_str) and left_is_int):
+                        continue
                 orig_type = type(node.op)
                 repl_idx = 0
                 any_produced = False
@@ -276,7 +291,51 @@ class AOD(MutationOperator):
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.BinOp) and type(node.op) in _ARITH_OPS:
-                # Replace with left operand
+                # Special-case multiplication used for sequence/string repetition
+                # (e.g. [1,2] * 2, "a" * 3): if detected, only keep the
+                # non-int operand (the sequence) as the deletion replacement.
+                if isinstance(node.op, ast.Mult):
+                    left_seq = isinstance(node.left, (ast.List, ast.Tuple, ast.Set))
+                    right_seq = isinstance(node.right, (ast.List, ast.Tuple, ast.Set))
+                    left_str = isinstance(node.left, ast.Constant) and isinstance(node.left.value, str)
+                    right_str = isinstance(node.right, ast.Constant) and isinstance(node.right.value, str)
+                    left_is_int = isinstance(node.left, ast.Constant) and isinstance(node.left.value, int)
+                    right_is_int = isinstance(node.right, ast.Constant) and isinstance(node.right.value, int)
+
+                    if (left_seq or left_str) and right_is_int:
+                        # keep left (sequence)
+                        new_tree_l = _deep_replace(tree, node, node.left)
+                        mutations.append(Mutation(
+                            operator=self.name, operator_code=self.code,
+                            site_index=site_idx, replacement_index=0,
+                            site=MutationSite(
+                                line=node.lineno, col=node.col_offset,
+                                node_type="BinOp",
+                                original=f"a {_ARITH_OPS[type(node.op)]} b",
+                                replacement="a",
+                            ),
+                            tree=new_tree_l,
+                        ))
+                        site_idx += 1
+                        continue
+                    if (right_seq or right_str) and left_is_int:
+                        # keep right (sequence)
+                        new_tree_r = _deep_replace(tree, node, node.right)
+                        mutations.append(Mutation(
+                            operator=self.name, operator_code=self.code,
+                            site_index=site_idx, replacement_index=0,
+                            site=MutationSite(
+                                line=node.lineno, col=node.col_offset,
+                                node_type="BinOp",
+                                original=f"a {_ARITH_OPS[type(node.op)]} b",
+                                replacement="b",
+                            ),
+                            tree=new_tree_r,
+                        ))
+                        site_idx += 1
+                        continue
+
+                # Default behavior: produce both left- and right- deletion variants
                 new_tree_l = _deep_replace(tree, node, node.left)
                 mutations.append(Mutation(
                     operator=self.name, operator_code=self.code,
@@ -289,7 +348,6 @@ class AOD(MutationOperator):
                     ),
                     tree=new_tree_l,
                 ))
-                # Replace with right operand
                 new_tree_r = _deep_replace(tree, node, node.right)
                 mutations.append(Mutation(
                     operator=self.name, operator_code=self.code,
@@ -317,6 +375,15 @@ class AOI(MutationOperator):
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                # Keep this operator conservative: do not mutate names that are
+                # used as call targets, since "sum(coins)" -> "(sum + 1)(coins)"
+                # is not a meaningful arithmetic change.
+                if any(
+                    isinstance(parent, ast.Call) and parent.func is node
+                    for stmt in body
+                    for parent in ast.walk(stmt)
+                ):
+                    continue
                 # a -> a + 1
                 new_add = ast.BinOp(
                     left=copy.deepcopy(node),
@@ -493,6 +560,15 @@ class UOI(MutationOperator):
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                # Keep unary insertion conservative: do not rewrite names that
+                # are being used as call targets, since "sum(x)" -> "(not sum)(x)"
+                # or "(-sum)(x)" is not a meaningful mutation.
+                if any(
+                    isinstance(parent, ast.Call) and parent.func is node
+                    for stmt in body
+                    for parent in ast.walk(stmt)
+                ):
+                    continue
                 # -x
                 neg = ast.UnaryOp(op=ast.USub(), operand=copy.deepcopy(node))
                 new_tree_neg = _deep_replace(tree, node, neg)

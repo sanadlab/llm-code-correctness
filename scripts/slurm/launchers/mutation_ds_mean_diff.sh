@@ -34,8 +34,8 @@ VECTORS_DIR="${VECTORS_DIR:-vectors}"
 RESULTS_DIR="${RESULTS_DIR:-results}"
 DATA_ROOT="${DATA_ROOT:-dataset/bigcodebench/phase2}"
 
-PARTITION="nvidia"
-ACCOUNT=""
+PARTITION="cs"
+ACCOUNT="condo_cs_nadi"
 QOS=""
 CONSTRAINT=""
 GPUS=1
@@ -47,7 +47,7 @@ PYTHON_MODULE="python/3.11.3"
 CUDA_MODULE="cuda/12.2.0"
 
 if [[ -n "${SCRATCH:-}" ]]; then
-    ENV_DIR="${SCRATCH}/envs/project-abu-dhabi"
+    ENV_DIR="${SCRATCH}/envs/llm-code-correctness"
     HF_HOME="${SCRATCH}/hf-models"
 else
     ENV_DIR=""
@@ -80,7 +80,7 @@ SLURM options:
   --gpus N --cpus N --mem SIZE --time HH:MM:SS --dependency STR
 
 Environment options:
-  --env-dir PATH          Virtualenv to activate           (default: $SCRATCH/envs/project-abu-dhabi)
+  --env-dir PATH          Virtualenv to activate           (default: $SCRATCH/envs/llm-code-correctness)
   --hf-home PATH          HuggingFace cache dir            (default: $SCRATCH/hf-models)
   --python-module NAME --cuda-module NAME
 

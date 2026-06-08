@@ -2,7 +2,8 @@
 #SBATCH --job-name=icse26_ood
 #SBATCH --output=logs/slurm/icse26_ood.%j.out
 #SBATCH --error=logs/slurm/icse26_ood.%j.err
-#SBATCH --partition=nvidia
+#SBATCH --partition=cs
+#SBATCH --account=condo_cs_nadi
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
@@ -48,7 +49,7 @@ OOD_SPLIT_FAMILY=${OOD_SPLIT_FAMILY:-icse26}
 
 PYTHON_MODULE=${PYTHON_MODULE:-python/3.11.3}
 CUDA_MODULE=${CUDA_MODULE:-cuda/12.2.0}
-ENV_DIR=${ENV_DIR:-${SCRATCH:-}/envs/project-abu-dhabi}
+ENV_DIR=${ENV_DIR:-${SCRATCH:-}/envs/llm-code-correctness}
 HF_HOME=${HF_HOME:-${SCRATCH:-}/hf-models}
 
 mkdir -p "${REPO_ROOT}/logs/slurm"

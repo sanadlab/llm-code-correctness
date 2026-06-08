@@ -2,6 +2,8 @@
 #SBATCH --job-name=phase1_mutate
 #SBATCH --output=logs/slurm/phase1_mutate.%j.out
 #SBATCH --error=logs/slurm/phase1_mutate.%j.err
+#SBATCH --partition=cs
+#SBATCH --account=condo_cs_nadi
 
 set -euo pipefail
 
@@ -14,7 +16,7 @@ fi
 CONFIG=${CONFIG:-configs/phase1/bigcodebench.yaml}
 STEP=${STEP:-mutate}
 PYTHON_MODULE=${PYTHON_MODULE:-python/3.11.3}
-ENV_DIR=${ENV_DIR:-${SCRATCH:-}/envs/project-abu-dhabi}
+ENV_DIR=${ENV_DIR:-${SCRATCH:-}/envs/llm-code-correctness}
 FORCE=${FORCE:-0}
 MUTATE_PARALLEL=${MUTATE_PARALLEL:-${SLURM_CPUS_PER_TASK:-1}}
 
