@@ -22,6 +22,10 @@ ARCHIVE="$REPO_ROOT/dataset/icse26.tar.zst"
 ARCHIVE_REL="dataset/icse26.tar.zst"
 SUBDIRS=(bigcodebench humaneval mbpp synthetic)
 
+if [[ ! -d "$ICSE26_DIR" ]]; then
+    mkdir -p "$ICSE26_DIR"
+fi
+
 usage() {
     echo "Usage: $0 {compress|decompress|track-zst|hide-zst}" >&2
     exit 1
