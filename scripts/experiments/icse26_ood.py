@@ -23,13 +23,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import time
 from pathlib import Path
 from typing import Dict, List
 
 import torch
 
+from src.hidden_states.cache import git_commit, safe_model_dir
+from src.vectors.projection import project_all_layers
 from scripts.experiments._common import (
     METHODS,
     PAPER_TAGS,
@@ -40,18 +41,7 @@ from scripts.experiments._common import (
     load_split,
     one_of_n_accuracy,
     pairwise_accuracy,
-    _project_all_layers,
-    _safe_model_dir,
 )
-
-
-def _git_commit() -> str:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
-        ).decode().strip()
-    except Exception:
-        return "unknown"
 
 
 def main():
@@ -117,8 +107,8 @@ def main():
     # ---- Load model once ----
     model, tokenizer = load_model_and_tokenizer(args.model, args.dtype)
 
-    git_sha = _git_commit()
-    safe_model = _safe_model_dir(args.model)
+    git_sha = git_commit()
+    safe_model = safe_model_dir(args.model)
     common_path = (
         f"{safe_model}/ood_{args.ood_source}/{args.test_dataset}/id/"
         f"{method_label}/{fit_framing_label}/{rep.name}"
@@ -163,7 +153,7 @@ def main():
 
         # Per-layer val pairwise.
         acts_val = rep.select(bundle_val)
-        layers, val_scores_all = _project_all_layers(direction, acts_val)
+        layers, val_scores_all = project_all_layers(direction, acts_val)
         val_per_layer = {}
         for j, L in enumerate(layers):
             val_per_layer[L] = pairwise_accuracy(
@@ -205,7 +195,7 @@ def main():
         for O in outer_folds:
             bundle_test = test_bundles[O]
             acts_test = rep.select(bundle_test)
-            _, test_scores_all = _project_all_layers(direction, acts_test)
+            _, test_scores_all = project_all_layers(direction, acts_test)
             test_per_layer = {}
             for j, L in enumerate(layers):
                 col = test_scores_all[:, j]
