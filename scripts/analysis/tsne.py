@@ -11,273 +11,39 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
+import sys
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
-import re
+from typing import Any, Dict, List, Sequence, Tuple
 
-import matplotlib.pyplot as plt
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 import numpy as np
-import torch
 from sklearn.manifold import TSNE
 
-from src.hidden_states.cache import bundle_output_dir, safe_model_dir
-
-DEFAULT_ICSE26_DATA_ROOT = Path("dataset/icse26")
-DEFAULT_MUTATION_PHASE2_ROOT = Path("dataset/bigcodebench/phase2")
-
-
-def _splits_dir(
-    *,
-    split_family: str,
-    benchmark: str,
-    data_root: Path,
-) -> Path:
-    """Directory containing ``manifest.json`` and fold_* subdirs for a split family."""
-    if split_family == "icse26":
-        return data_root / benchmark
-
-    if (data_root / "manifest.json").is_file():
-        return data_root
-    nested = data_root / split_family
-    if (nested / "manifest.json").is_file():
-        return nested
-    default = DEFAULT_MUTATION_PHASE2_ROOT / split_family
-    if (default / "manifest.json").is_file():
-        return default
-    raise FileNotFoundError(
-        f"could not locate splits for {split_family!r}; "
-        f"tried {data_root}, {nested}, and {default}"
-    )
-
-
-def _read_selected_layer(
-    *,
-    results_root: Path,
-    model: str,
-    split_family: str,
-    benchmark: str,
-    method: str,
-    fit_framing: str,
-    representation: str,
-    val_framing: str,
-    test_framing: str,
-    fold: int,
-) -> int:
-    results_path = (
-        results_root
-        / safe_model_dir(model)
-        / split_family
-        / benchmark
-        / "id"
-        / method
-        / fit_framing
-        / representation
-        / f"val={val_framing}__test={test_framing}"
-        / f"fold_{fold}"
-        / "results.json"
-    )
-    if not results_path.is_file():
-        raise FileNotFoundError(
-            f"missing selected-layer file: {results_path}"
-        )
-    with open(results_path) as f:
-        payload = json.load(f)
-    if "selected_layer" not in payload:
-        raise KeyError(f"`selected_layer` missing in {results_path}")
-    return int(payload["selected_layer"])
-
-
-def _resolve_all_folds(
-    *,
-    split_family: str,
-    data_root: Path,
-    benchmark: str,
-) -> List[int]:
-    manifest_path = _splits_dir(
-        split_family=split_family, benchmark=benchmark, data_root=data_root
-    ) / "manifest.json"
-    if not manifest_path.is_file():
-        raise FileNotFoundError(f"missing manifest for --folds all: {manifest_path}")
-    with open(manifest_path) as f:
-        manifest = json.load(f)
-    num_folds = int(manifest["num_folds"])
-    return list(range(num_folds))
-
-
-def _parse_fold_selector(
-    folds_arg: Sequence[str],
-    *,
-    split_family: str,
-    data_root: Path,
-    benchmark: str,
-) -> List[int]:
-    if len(folds_arg) == 1 and folds_arg[0] == "all":
-        return _resolve_all_folds(
-            split_family=split_family, data_root=data_root, benchmark=benchmark
-        )
-    try:
-        parsed = sorted({int(x) for x in folds_arg})
-    except ValueError as exc:
-        raise ValueError("--folds must be integers or 'all'") from exc
-    if not parsed:
-        raise ValueError("--folds resolved to an empty set")
-    if any(f < 0 for f in parsed):
-        raise ValueError("--folds must be non-negative")
-    return parsed
-
-
-def _parse_layer_selector(layers_arg: Sequence[str]) -> Tuple[str, List[int] | None]:
-    if len(layers_arg) == 1 and layers_arg[0] in {"selected", "all"}:
-        return layers_arg[0], None
-    try:
-        parsed = sorted({int(x) for x in layers_arg})
-    except ValueError as exc:
-        raise ValueError("--layers must be integers, 'selected', or 'all'") from exc
-    if not parsed:
-        raise ValueError("--layers resolved to an empty set")
-    if any(l < 0 for l in parsed):
-        raise ValueError("--layers must be non-negative")
-    return "explicit", parsed
-
-
-def _parse_task_selector(tasks_arg: Sequence[str] | None) -> Tuple[bool, List[str] | None]:
-    if not tasks_arg:
-        return False, None
-    if len(tasks_arg) == 1 and tasks_arg[0] == "all":
-        return True, None
-    task_ids = sorted({x for x in tasks_arg if x})
-    if not task_ids:
-        raise ValueError("--tasks resolved to an empty set")
-    return True, task_ids
-
-
-def _safe_task_id(task_id: str) -> str:
-    # ICSE task ids look like "<Benchmark>/<numeric_id>".
-    # Since output already sits under <benchmark>/, keep only the right segment
-    # for cleaner names (e.g. "BigCodeBench/208" -> "208").
-    leaf = task_id.split("/")[-1]
-    return re.sub(r"[^A-Za-z0-9_.-]+", "__", leaf)
-
-
-def _tsne_output_path_parts(split_family: str) -> Tuple[str, ...]:
-    """Path segments between ``<model_safe>/`` and ``<benchmark>/`` in output dirs."""
-    if split_family == "icse26":
-        return ("icse26",)
-    if split_family.startswith("ood_"):
-        return ("ood", split_family)
-    return ("mutation_ds", split_family)
-
-
-def _tsne_dataset_label(split_family: str) -> str:
-    if split_family == "icse26":
-        return "ICSE26"
-    if split_family.startswith("ood_"):
-        return f"OOD ({split_family})"
-    return f"Mutation_DS ({split_family})"
-
-
-def _dataset_results_path(
-    *,
-    split_family: str,
-    benchmark: str,
-    data_root: Path,
-) -> Path:
-    """Per-task monitoring outcomes JSONL (ICSE26 or Mutation_DS phase2 layout)."""
-    splits_dir = _splits_dir(
-        split_family=split_family, benchmark=benchmark, data_root=data_root
-    )
-    if split_family == "icse26":
-        filename = f"icse26_{benchmark}.jsonl"
-    else:
-        filename = f"{split_family}_{benchmark}.jsonl"
-    return splits_dir / filename
-
-
-def _load_task_correctness_index(
-    *,
-    split_family: str,
-    data_root: Path,
-    benchmark: str,
-    model: str,
-    method: str,
-    fit_framing: str,
-    representation: str,
-    val_framing: str,
-    test_framing: str,
-) -> Dict[Tuple[int, str], bool]:
-    results_path = _dataset_results_path(
-        split_family=split_family, benchmark=benchmark, data_root=data_root
-    )
-    if not results_path.is_file():
-        raise FileNotFoundError(f"missing dataset results file: {results_path}")
-
-    model_safe = safe_model_dir(model)
-    index: Dict[Tuple[int, str], bool] = {}
-    with open(results_path) as f:
-        for line in f:
-            row = json.loads(line)
-            if row["model"] != model_safe:
-                continue
-            if row["method"] != method:
-                continue
-            if row["framing"] != fit_framing:
-                continue
-            if row["rep_type"] != representation:
-                continue
-            if row["val_condition"] != val_framing:
-                continue
-            if row["test_condition"] != test_framing:
-                continue
-            key = (int(row["fold"]), row["task_id"])
-            if key in index:
-                raise ValueError(f"duplicate dataset entry for {key} in {results_path}")
-            index[key] = bool(row["correct"])
-    return index
-
-
-def _load_test_bundle(
-    *,
-    hidden_states_root: Path,
-    model: str,
-    split_family: str,
-    benchmark: str,
-    fold: int,
-    test_framing: str,
-) -> Dict[str, object]:
-    out_dir = bundle_output_dir(
-        output_root=hidden_states_root,
-        model_name=model,
-        split_family=split_family,
-        benchmark=benchmark,
-        distribution="id",
-        data_split="test",
-        framing=test_framing,
-        fold=fold,
-    )
-    bundle_path = out_dir / "bundle.pt"
-    if not bundle_path.is_file():
-        raise FileNotFoundError(f"missing cached test bundle: {bundle_path}")
-    # Use direct torch.load for compatibility with older torch versions.
-    return torch.load(bundle_path, map_location="cpu")
-
-
-def _classify_labels_strict(
-    labels: Sequence[int], sample_ids: Sequence[str]
-) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-    """Return masks for correct/incorrect and a list of ambiguous sample IDs."""
-    labels_arr = np.asarray(labels, dtype=np.int64)
-    if labels_arr.shape[0] != len(sample_ids):
-        raise ValueError("labels/sample_ids length mismatch")
-
-    is_correct = labels_arr == 1
-    is_incorrect = labels_arr == 0
-    ambiguous = [
-        sample_ids[i]
-        for i in range(labels_arr.shape[0])
-        if not (is_correct[i] or is_incorrect[i])
-    ]
-    return is_correct, is_incorrect, ambiguous
+from scripts.analysis.viz_common import (
+    build_fold_grid,
+    build_layer_grid,
+    build_single_scatter,
+    classify_labels_strict,
+    cross_fold_dirname,
+    dataset_results_path,
+    layer_tag,
+    load_task_correctness_index,
+    load_test_bundle,
+    parse_fold_selector,
+    parse_layer_selector,
+    parse_task_selector,
+    read_selected_layer,
+    resolve_all_folds,
+    resolve_layers_for_fold,
+    safe_task_id,
+    scatter_correctness,
+    viz_dataset_label,
+    viz_output_path_parts,
+)
+from src.hidden_states.cache import safe_model_dir
 
 
 def _compute_tsne(
@@ -318,33 +84,12 @@ def _plot_on_axis(
     title: str,
     background_coords: np.ndarray | None = None,
 ) -> None:
-    if background_coords is not None and background_coords.shape[0] > 0:
-        ax.scatter(
-            background_coords[:, 0],
-            background_coords[:, 1],
-            s=6,
-            alpha=0.2,
-            color="lightgray",
-            label="fold background",
-            zorder=1,
-        )
-    ax.scatter(
-        coords[is_incorrect, 0],
-        coords[is_incorrect, 1],
-        s=12,
-        alpha=1.0,
-        color="salmon",
-        label="incorrect (label=0)",
-        zorder=2,
-    )
-    ax.scatter(
-        coords[is_correct, 0],
-        coords[is_correct, 1],
-        s=12,
-        alpha=1.0,
-        color="skyblue",
-        label="correct (label=1)",
-        zorder=2,
+    scatter_correctness(
+        ax=ax,
+        coords=coords,
+        is_correct=is_correct,
+        is_incorrect=is_incorrect,
+        background_coords=background_coords,
     )
     ax.set_title(title)
     ax.set_xlabel("tSNE-1")
@@ -353,137 +98,32 @@ def _plot_on_axis(
     ax.grid(alpha=0.2)
 
 
-def _grid_shape(n: int) -> Tuple[int, int]:
-    cols = int(math.ceil(math.sqrt(n)))
-    rows = int(math.ceil(n / cols))
-    return rows, cols
-
-
-def _save_figure(fig, out_path: Path) -> None:
-    fig.tight_layout()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=180)
-    plt.close(fig)
-
-
-def _build_single_scatter(
-    *,
-    coords: np.ndarray,
-    is_correct: np.ndarray,
-    is_incorrect: np.ndarray,
-    title: str,
-    out_path: Path,
-) -> None:
-    fig, ax = plt.subplots(figsize=(8, 6))
+def _render_tsne_layer_panel(ax, panel: Any, selected_layer: int) -> None:
+    if len(panel) == 5:
+        layer, coords, is_correct, is_incorrect, background_coords = panel
+    else:
+        layer, coords, is_correct, is_incorrect = panel
+        background_coords = None
+    suffix = " (selected)" if layer == selected_layer else ""
     _plot_on_axis(
         ax=ax,
         coords=coords,
         is_correct=is_correct,
         is_incorrect=is_incorrect,
-        title=title,
+        title=f"layer={layer}{suffix}",
+        background_coords=background_coords,
     )
-    _save_figure(fig, out_path)
 
 
-def _build_layer_grid(
-    *,
-    panels: Sequence[
-        Tuple[int, np.ndarray, np.ndarray, np.ndarray]
-        | Tuple[int, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]
-    ],
-    selected_layer: int,
-    fig_title: str,
-    out_path: Path,
-) -> None:
-    rows, cols = _grid_shape(len(panels))
-    fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 4 * rows))
-    axes_1d = np.array(axes).reshape(-1)
-    for i, panel in enumerate(panels):
-        if len(panel) == 5:
-            layer, coords, is_correct, is_incorrect, background_coords = panel
-        else:
-            layer, coords, is_correct, is_incorrect = panel
-            background_coords = None
-        suffix = " (selected)" if layer == selected_layer else ""
-        _plot_on_axis(
-            ax=axes_1d[i],
-            coords=coords,
-            is_correct=is_correct,
-            is_incorrect=is_incorrect,
-            title=f"layer={layer}{suffix}",
-            background_coords=background_coords,
-        )
-    for j in range(len(panels), len(axes_1d)):
-        axes_1d[j].axis("off")
-    fig.suptitle(fig_title, fontsize=14)
-    _save_figure(fig, out_path)
-
-
-def _build_fold_grid(
-    *,
-    panels: Sequence[Tuple[int, int, np.ndarray, np.ndarray, np.ndarray]],
-    fig_title: str,
-    out_path: Path,
-) -> None:
-    rows, cols = _grid_shape(len(panels))
-    fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 4 * rows))
-    axes_1d = np.array(axes).reshape(-1)
-    for i, (fold, layer, coords, is_correct, is_incorrect) in enumerate(panels):
-        _plot_on_axis(
-            ax=axes_1d[i],
-            coords=coords,
-            is_correct=is_correct,
-            is_incorrect=is_incorrect,
-            title=f"fold={fold}, layer={layer}",
-        )
-    for j in range(len(panels), len(axes_1d)):
-        axes_1d[j].axis("off")
-    fig.suptitle(fig_title, fontsize=14)
-    _save_figure(fig, out_path)
-
-
-def _resolve_layers_for_fold(
-    *,
-    layer_mode: str,
-    explicit_layers: List[int] | None,
-    selected_layer: int,
-    num_layers: int,
-) -> List[int]:
-    if layer_mode == "selected":
-        return [selected_layer]
-    if layer_mode == "all":
-        return list(range(num_layers))
-    assert explicit_layers is not None
-    bad = [l for l in explicit_layers if l >= num_layers]
-    if bad:
-        raise ValueError(
-            f"requested layer(s) {bad} not present; bundle has layers [0, {num_layers - 1}]"
-        )
-    return list(explicit_layers)
-
-
-def _layer_tag(layer_mode: str, layers: List[int]) -> str:
-    if layer_mode == "selected":
-        return str(layers[0])
-    if layer_mode == "all":
-        return "all"
-    return "_".join(str(x) for x in layers)
-
-
-def _cross_fold_dirname(
-    *,
-    folds: Sequence[int],
-    folds_is_all: bool,
-    layer_mode: str,
-) -> str:
-    # Any explicit layer selection is treated as a custom request bucket.
-    if layer_mode == "explicit":
-        return "custom"
-    if folds_is_all:
-        return "fold_all"
-    if len(folds) > 1:
-        return "custom"
-    return f"fold_{folds[0]}"
+def _render_tsne_fold_panel(ax, panel: Any) -> None:
+    fold, layer, coords, is_correct, is_incorrect = panel
+    _plot_on_axis(
+        ax=ax,
+        coords=coords,
+        is_correct=is_correct,
+        is_incorrect=is_incorrect,
+        title=f"fold={fold}, layer={layer}",
+    )
 
 
 def run_dynamic(
@@ -514,10 +154,9 @@ def run_dynamic(
     task_view_mode: str,
     show_background: bool,
 ) -> Dict[str, object]:
-    # Cache fold-level data for reuse across layer/fold panels.
     fold_data: Dict[int, Dict[str, object]] = {}
     for fold in folds:
-        selected_layer = _read_selected_layer(
+        selected_layer = read_selected_layer(
             results_root=results_root,
             model=model,
             split_family=split_family,
@@ -529,7 +168,7 @@ def run_dynamic(
             test_framing=test_framing,
             fold=fold,
         )
-        bundle_blob = _load_test_bundle(
+        bundle_blob = load_test_bundle(
             hidden_states_root=hidden_states_root,
             model=model,
             split_family=split_family,
@@ -547,7 +186,7 @@ def run_dynamic(
         sample_ids = list(bundle_blob["sample_ids"])
         task_ids = list(bundle_blob["task_ids"])
         labels = bundle_blob["labels"].detach().cpu().tolist()
-        is_correct, is_incorrect, ambiguous = _classify_labels_strict(labels, sample_ids)
+        is_correct, is_incorrect, ambiguous = classify_labels_strict(labels, sample_ids)
         if ambiguous:
             preview = ", ".join(ambiguous[:10])
             raise ValueError(
@@ -569,7 +208,7 @@ def run_dynamic(
         acts = fold_data[fold]["acts"]
         selected_layer = int(fold_data[fold]["selected_layer"])
         num_layers = int(acts.shape[1])
-        resolved_layers_per_fold[fold] = _resolve_layers_for_fold(
+        resolved_layers_per_fold[fold] = resolve_layers_for_fold(
             layer_mode=layer_mode,
             explicit_layers=explicit_layers,
             selected_layer=selected_layer,
@@ -621,18 +260,18 @@ def run_dynamic(
         )
         return tsne_cache[key]
 
-    dataset_label = _tsne_dataset_label(split_family)
+    dataset_label = viz_dataset_label(split_family)
     out_root = (
         output_dir
         / safe_model_dir(model)
-        / Path(*_tsne_output_path_parts(split_family))
+        / Path(*viz_output_path_parts(split_family))
         / benchmark
     )
     outputs: List[str] = []
 
     correctness_index: Dict[Tuple[int, str], bool] | None = None
     if task_mode:
-        correctness_index = _load_task_correctness_index(
+        correctness_index = load_task_correctness_index(
             split_family=split_family,
             data_root=data_root,
             benchmark=benchmark,
@@ -658,7 +297,7 @@ def run_dynamic(
             for task_id in tasks:
                 idx = [i for i, tid in enumerate(fold_data[fold]["task_ids"]) if tid == task_id]
                 labels_task = [fold_data[fold]["labels"][i] for i in idx]
-                is_correct_task, is_incorrect_task, ambiguous_task = _classify_labels_strict(
+                is_correct_task, is_incorrect_task, ambiguous_task = classify_labels_strict(
                     labels_task, [fold_data[fold]["sample_ids"][i] for i in idx]
                 )
                 if ambiguous_task:
@@ -685,14 +324,14 @@ def run_dynamic(
                         )
                     )
 
-                layer_tag = _layer_tag(layer_mode, layers)
-                task_safe = _safe_task_id(task_id)
+                layer_tag_str = layer_tag(layer_mode, layers)
+                task_safe = safe_task_id(task_id)
                 mode_suffix = "" if task_view_mode == "local" else f"_{task_view_mode}"
                 if use_background:
                     mode_suffix = f"{mode_suffix}_bg"
                 lookup_key = (fold, task_id)
                 if lookup_key not in correctness_index:
-                    results_path = _dataset_results_path(
+                    results_path = dataset_results_path(
                         split_family=split_family,
                         benchmark=benchmark,
                         data_root=data_root,
@@ -710,13 +349,14 @@ def run_dynamic(
                     / f"fold_{fold}"
                     / "tasks"
                     / outcome
-                    / f"fold_{fold}_task_{task_safe}_layer_{layer_tag}{mode_suffix}.png"
+                    / f"fold_{fold}_task_{task_safe}_layer_{layer_tag_str}{mode_suffix}.png"
                 )
-                _build_layer_grid(
+                build_layer_grid(
                     panels=panels,
                     selected_layer=int(fold_data[fold]["selected_layer"]),
                     fig_title=f"{dataset_label} {benchmark} | fold={fold} | task={task_id}",
                     out_path=out_path,
+                    render_panel=_render_tsne_layer_panel,
                 )
                 outputs.append(str(out_path))
     elif len(folds) == 1:
@@ -725,10 +365,14 @@ def run_dynamic(
         if len(layers) == 1:
             layer = layers[0]
             out_path = out_root / f"fold_{fold}" / f"fold_{fold}_layer_{layer}.png"
-            _build_single_scatter(
-                coords=_coords_for(fold, layer),
-                is_correct=fold_data[fold]["is_correct"],
-                is_incorrect=fold_data[fold]["is_incorrect"],
+            build_single_scatter(
+                plot_axes=lambda ax: _plot_on_axis(
+                    ax=ax,
+                    coords=_coords_for(fold, layer),
+                    is_correct=fold_data[fold]["is_correct"],
+                    is_incorrect=fold_data[fold]["is_incorrect"],
+                    title="",
+                ),
                 title=f"{dataset_label} {benchmark} | fold={fold}, layer={layer}",
                 out_path=out_path,
             )
@@ -744,24 +388,24 @@ def run_dynamic(
                         fold_data[fold]["is_incorrect"],
                     )
                 )
-            layer_tag = _layer_tag(layer_mode, layers)
+            layer_tag_str = layer_tag(layer_mode, layers)
             out_path = (
                 out_root
                 / f"fold_{fold}"
-                / f"fold_{fold}_layer_{layer_tag}.png"
+                / f"fold_{fold}_layer_{layer_tag_str}.png"
             )
-            _build_layer_grid(
+            build_layer_grid(
                 panels=panels,
                 selected_layer=int(fold_data[fold]["selected_layer"]),
                 fig_title=f"{dataset_label} {benchmark} | fold={fold}",
                 out_path=out_path,
+                render_panel=_render_tsne_layer_panel,
             )
             outputs.append(str(out_path))
     else:
-        # One layer per fold -> one fold-grid figure.
         one_layer_each = all(len(resolved_layers_per_fold[f]) == 1 for f in folds)
         if one_layer_each:
-            container = _cross_fold_dirname(
+            container = cross_fold_dirname(
                 folds=folds,
                 folds_is_all=folds_is_all,
                 layer_mode=layer_mode,
@@ -778,17 +422,17 @@ def run_dynamic(
                         fold_data[fold]["is_incorrect"],
                     )
                 )
-            layer_tag = _layer_tag(layer_mode, resolved_layers_per_fold[folds[0]])
-            out_path = out_root / container / f"{container}_layer_{layer_tag}.png"
-            _build_fold_grid(
+            layer_tag_str = layer_tag(layer_mode, resolved_layers_per_fold[folds[0]])
+            out_path = out_root / container / f"{container}_layer_{layer_tag_str}.png"
+            build_fold_grid(
                 panels=panels,
                 fig_title=f"{dataset_label} {benchmark} | folds={folds}",
                 out_path=out_path,
+                render_panel=_render_tsne_fold_panel,
             )
             outputs.append(str(out_path))
         else:
-            # Multi-fold and multi-layer -> one layer-grid figure per fold.
-            container = _cross_fold_dirname(
+            container = cross_fold_dirname(
                 folds=folds,
                 folds_is_all=folds_is_all,
                 layer_mode=layer_mode,
@@ -805,17 +449,18 @@ def run_dynamic(
                             fold_data[fold]["is_incorrect"],
                         )
                     )
-                layer_tag = _layer_tag(layer_mode, layers)
+                layer_tag_str = layer_tag(layer_mode, layers)
                 out_path = (
                     out_root
                     / container
-                    / f"fold_{fold}_layer_{layer_tag}.png"
+                    / f"fold_{fold}_layer_{layer_tag_str}.png"
                 )
-                _build_layer_grid(
+                build_layer_grid(
                     panels=panels,
                     selected_layer=int(fold_data[fold]["selected_layer"]),
                     fig_title=f"{dataset_label} {benchmark} | fold={fold}",
                     out_path=out_path,
+                    render_panel=_render_tsne_layer_panel,
                 )
                 outputs.append(str(out_path))
 
@@ -842,7 +487,7 @@ def run_dynamic(
     if task_mode:
         summary["task_outcome_layout"] = "tasks_success_fail_flat"
         summary["dataset_results_path"] = str(
-            _dataset_results_path(
+            dataset_results_path(
                 split_family=split_family,
                 benchmark=benchmark,
                 data_root=data_root,
@@ -907,20 +552,20 @@ def main() -> None:
     args = parser.parse_args()
 
     data_root = Path(args.data_root)
-    folds = _parse_fold_selector(
+    folds = parse_fold_selector(
         args.folds,
         split_family=args.split_family,
         data_root=data_root,
         benchmark=args.benchmark,
     )
-    all_folds = _resolve_all_folds(
+    all_folds = resolve_all_folds(
         split_family=args.split_family,
         data_root=data_root,
         benchmark=args.benchmark,
     )
     folds_is_all = folds == all_folds
-    layer_mode, explicit_layers = _parse_layer_selector(args.layers)
-    task_mode, explicit_task_ids = _parse_task_selector(args.tasks)
+    layer_mode, explicit_layers = parse_layer_selector(args.layers)
+    task_mode, explicit_task_ids = parse_task_selector(args.tasks)
     if args.show_background and args.task_view_mode != "global_subset":
         raise ValueError(
             "--show-background requires --task-view-mode global_subset"

@@ -301,6 +301,49 @@ Per-task mode (`--tasks`) reads task outcomes from
 not from the ICSE26 aggregate file.
 
 
+## ICSE2026 PCA (cache-only)
+
+This script is selector-driven (no hardcoded stage mode). It reads:
+- selected layer from `results/.../results.json`
+- hidden states from `hidden_states/.../bundle.pt`
+- per-layer reading vectors from `vectors/.../direction.pt` (mean-diff direction, incorrect→correct)
+
+It does not run extraction or model inference.
+
+Two visualization approaches are available via `--approach`:
+- **A** — standard 2D PCA on the points, with the reading vector drawn as an arrow from the origin; panel titles include `captured` (fraction of the direction lying in the PC1–PC2 plane).
+- **B** — x-axis is projection onto the reading vector (correctness direction); y-axis is the top residual PC orthogonal to it.
+
+Use `--normalize-vector` to unit-normalize the reading vector for projection scaling (encoded in output filenames).
+
+Default output path format (dataset origin from `--split-family`):
+- ICSE26: `visualizations/pca/<model_safe>/icse26/<benchmark>/<bucket>/<image_name>.png`
+- Mutation_DS (e.g. `s1_baseline`): `visualizations/pca/<model_safe>/mutation_ds/<split-family>/<benchmark>/<bucket>/<image_name>.png`
+- OOD (e.g. `ood_mbpp`): `visualizations/pca/<model_safe>/ood/<split-family>/<benchmark>/...`
+
+Filenames append `_approach{A|B}_norm{True|False}` before `.png` so A/B and normalized/raw runs do not overwrite each other (e.g. `fold_0_task_379_layer_all_approachA_normFalse.png`).
+
+Per-task mode (`--tasks`) uses the same `fold_<f>/tasks/<success|fail>/` layout as tSNE. PCA always fits locally on the plotted points (4 per task, or the full fold otherwise).
+
+Example (Mutation_DS per-task, both approaches, all layers):
+
+```bash
+python scripts/analysis/pca.py \
+  --benchmark bigcodebench \
+  --split-family s8_single_arithmetic \
+  --model codellama/CodeLlama-7b-Instruct-hf \
+  --method mean_diff \
+  --fit-framing function \
+  --representation response_avg \
+  --val-framing neutral \
+  --test-framing neutral \
+  --folds 0 \
+  --layers all \
+  --tasks all \
+  --approach both
+```
+
+
 ## Regenerating the vectors/results (secondary)
 You don't need to do this. Just added information. The available `vectors/` and `results/` were produced
 by the experiments in `scripts/experiments/`. The code under
