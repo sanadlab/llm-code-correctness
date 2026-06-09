@@ -5,6 +5,7 @@
 pyyaml
 data-designer
 duckdb>=1.0,<1.2
+astroid>=3.0,<4.0
 
 # Phase 2 dependencies
 torch
