@@ -2,6 +2,7 @@
 
 This script reads only precomputed artifacts:
   - selected layers from `results/.../results.json`
+  - optional correctness-direction scores from `results/.../detailed.json`
   - hidden states from `hidden_states/.../bundle.pt`
   - per-layer reading vectors from `vectors/.../direction.pt`
 
@@ -24,26 +25,37 @@ import numpy as np
 from sklearn.decomposition import PCA
 
 from scripts.analysis.viz_common import (
+    LayerHighlight,
+    apply_layer_axes_style,
     approach_filename_suffix,
+    approach_norm_filename_suffix,
     build_fold_grid,
     build_layer_grid,
     build_single_scatter,
     classify_labels_strict,
     cross_fold_dirname,
     dataset_results_path,
+    highlighted_subplot_title_kwargs,
+    layer_highlight_state,
     layer_tag,
     load_direction_vectors,
+    load_fold_detailed,
+    load_fold_results,
     load_task_correctness_index,
     load_test_bundle,
     parse_approach_selector,
     parse_fold_selector,
     parse_layer_selector,
+    parse_projection_source,
     parse_task_selector,
-    read_selected_layer,
+    pca_approach_dirname,
+    test_projection_scores,
     resolve_all_folds,
     resolve_layers_for_fold,
     safe_task_id,
     scatter_correctness,
+    scatter_task_implementations,
+    set_layer_subplot_title,
     viz_dataset_label,
     viz_output_path_parts,
 )
@@ -88,6 +100,7 @@ def _compute_pca_approach_b(
     *,
     normalize_vector: bool,
     seed: int,
+    x_scores: np.ndarray | None = None,
 ) -> np.ndarray:
     if features.ndim != 2:
         raise ValueError(f"expected 2D features, got shape={features.shape}")
@@ -99,7 +112,12 @@ def _compute_pca_approach_b(
         raise ValueError("reading vector has zero norm")
     u = reading / r_norm
     v = u if normalize_vector else reading
-    x = features @ v
+    if x_scores is not None:
+        if x_scores.shape[0] != features.shape[0]:
+            raise ValueError("x_scores/features length mismatch")
+        x = x_scores.astype(np.float64)
+    else:
+        x = features @ v
     xc = features - features.mean(axis=0)
     w = xc - (xc @ u)[:, None] * u[None, :]
     if np.allclose(w, 0.0) or float(np.std(w)) < 1e-12:
@@ -144,22 +162,51 @@ def _set_panel_limits(ax, coords: np.ndarray, display_arrow: np.ndarray) -> None
     ax.set_ylim(ys.min() - margin, ys.max() + margin)
 
 
+def _scatter_pca_points(
+    *,
+    ax,
+    coords: np.ndarray,
+    is_correct: np.ndarray,
+    is_incorrect: np.ndarray,
+    sample_ids: Sequence[str] | None = None,
+    add_legend: bool = True,
+) -> None:
+    if sample_ids is not None:
+        scatter_task_implementations(
+            ax=ax,
+            coords=coords,
+            sample_ids=sample_ids,
+            is_correct=is_correct,
+            add_legend=add_legend,
+        )
+    else:
+        scatter_correctness(
+            ax=ax,
+            coords=coords,
+            is_correct=is_correct,
+            is_incorrect=is_incorrect,
+            add_legend=add_legend,
+        )
+
+
 def _plot_pca_approach_a_axis(
     *,
     ax,
     coords: np.ndarray,
     is_correct: np.ndarray,
     is_incorrect: np.ndarray,
-    title: str,
     arrow: np.ndarray,
-    captured: float,
+    sample_ids: Sequence[str] | None = None,
+    add_legend: bool = True,
 ) -> None:
     display_arrow = _arrow_display_vector(coords, arrow)
-    scatter_correctness(
+    _scatter_pca_points(
         ax=ax,
         coords=coords,
         is_correct=is_correct,
         is_incorrect=is_incorrect,
+        sample_ids=sample_ids,
+        add_legend=add_legend,
     )
     if float(np.linalg.norm(display_arrow)) > 0:
         ax.annotate(
@@ -170,10 +217,8 @@ def _plot_pca_approach_a_axis(
             zorder=3,
         )
     _set_panel_limits(ax, coords, display_arrow)
-    ax.set_title(f"{title}\ncaptured={captured:.3f}")
     ax.set_xlabel("PC1")
     ax.set_ylabel("PC2")
-    ax.legend(loc="best", fontsize=9)
     ax.grid(alpha=0.2)
 
 
@@ -183,84 +228,132 @@ def _plot_pca_approach_b_axis(
     coords: np.ndarray,
     is_correct: np.ndarray,
     is_incorrect: np.ndarray,
-    title: str,
     normalize_vector: bool,
+    sample_ids: Sequence[str] | None = None,
+    add_legend: bool = True,
 ) -> None:
-    scatter_correctness(
+    _scatter_pca_points(
         ax=ax,
         coords=coords,
         is_correct=is_correct,
         is_incorrect=is_incorrect,
+        sample_ids=sample_ids,
+        add_legend=add_legend,
     )
     xlabel = "correctness direction (reading vector)"
     if normalize_vector:
         xlabel += " (unit-normalized)"
-    ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel("top residual PC (⊥ correctness)")
-    ax.legend(loc="best", fontsize=9)
     ax.grid(alpha=0.2)
 
 
-def _make_render_pca_a_panel(normalize_vector: bool):
-    def _render(ax, panel: Any, selected_layer: int) -> None:
-        layer, coords, is_correct, is_incorrect, arrow, captured = panel
-        suffix = " (selected)" if layer == selected_layer else ""
+def _make_render_pca_a_panel(normalize_vector: bool, use_implementation_markers: bool):
+    def _render(
+        ax,
+        panel: Any,
+        highlight: LayerHighlight,
+        *,
+        add_legend: bool = True,
+    ) -> None:
+        sample_ids = None
+        if len(panel) == 7:
+            layer, coords, is_correct, is_incorrect, arrow, captured, sample_ids = panel
+        else:
+            layer, coords, is_correct, is_incorrect, arrow, captured = panel
+        apply_layer_axes_style(ax, highlight)
         _plot_pca_approach_a_axis(
             ax=ax,
             coords=coords,
             is_correct=is_correct,
             is_incorrect=is_incorrect,
-            title=f"layer={layer}{suffix}",
             arrow=arrow,
-            captured=captured,
+            sample_ids=sample_ids if use_implementation_markers else None,
+            add_legend=add_legend,
+        )
+        set_layer_subplot_title(
+            ax,
+            layer,
+            highlight,
+            extra=f"captured={captured:.3f}",
         )
 
     return _render
 
 
-def _make_render_pca_b_panel(normalize_vector: bool):
-    def _render(ax, panel: Any, selected_layer: int) -> None:
-        layer, coords, is_correct, is_incorrect = panel
-        suffix = " (selected)" if layer == selected_layer else ""
+def _make_render_pca_b_panel(normalize_vector: bool, use_implementation_markers: bool):
+    def _render(
+        ax,
+        panel: Any,
+        highlight: LayerHighlight,
+        *,
+        add_legend: bool = True,
+    ) -> None:
+        sample_ids = None
+        if len(panel) == 5:
+            layer, coords, is_correct, is_incorrect, sample_ids = panel
+        else:
+            layer, coords, is_correct, is_incorrect = panel
+        apply_layer_axes_style(ax, highlight)
         _plot_pca_approach_b_axis(
             ax=ax,
             coords=coords,
             is_correct=is_correct,
             is_incorrect=is_incorrect,
-            title=f"layer={layer}{suffix}",
             normalize_vector=normalize_vector,
+            sample_ids=sample_ids if use_implementation_markers else None,
+            add_legend=add_legend,
         )
+        set_layer_subplot_title(ax, layer, highlight)
 
     return _render
 
 
 def _make_render_pca_a_fold_panel():
-    def _render(ax, panel: Any) -> None:
+    def _render(
+        ax,
+        panel: Any,
+        highlight: LayerHighlight,
+        *,
+        add_legend: bool = True,
+    ) -> None:
         fold, layer, coords, is_correct, is_incorrect, arrow, captured = panel
+        apply_layer_axes_style(ax, highlight)
         _plot_pca_approach_a_axis(
             ax=ax,
             coords=coords,
             is_correct=is_correct,
             is_incorrect=is_incorrect,
-            title=f"fold={fold}, layer={layer}",
             arrow=arrow,
-            captured=captured,
+            add_legend=add_legend,
         )
+        title = f"fold={fold}, layer={layer}\ncaptured={captured:.3f}"
+        ax.set_title(title, **highlighted_subplot_title_kwargs(highlight))
 
     return _render
 
 
 def _make_render_pca_b_fold_panel(normalize_vector: bool):
-    def _render(ax, panel: Any) -> None:
+    def _render(
+        ax,
+        panel: Any,
+        highlight: LayerHighlight,
+        *,
+        add_legend: bool = True,
+    ) -> None:
         fold, layer, coords, is_correct, is_incorrect = panel
+        apply_layer_axes_style(ax, highlight)
         _plot_pca_approach_b_axis(
             ax=ax,
             coords=coords,
             is_correct=is_correct,
             is_incorrect=is_incorrect,
-            title=f"fold={fold}, layer={layer}",
             normalize_vector=normalize_vector,
+            add_legend=add_legend,
+        )
+        ax.set_title(
+            f"fold={fold}, layer={layer}",
+            **highlighted_subplot_title_kwargs(highlight),
         )
 
     return _render
@@ -290,10 +383,15 @@ def run_dynamic(
     explicit_task_ids: List[str] | None,
     approaches: Sequence[str],
     normalize_vector: bool,
+    implementation_markers: bool,
+    projection_source: str,
 ) -> Dict[str, object]:
+    use_saved_projections = projection_source == "saved"
+    fold_results_by_fold: Dict[int, dict] = {}
+    fold_detailed_by_fold: Dict[int, dict] = {}
     fold_data: Dict[int, Dict[str, object]] = {}
     for fold in folds:
-        selected_layer = read_selected_layer(
+        fold_results = load_fold_results(
             results_root=results_root,
             model=model,
             split_family=split_family,
@@ -305,6 +403,21 @@ def run_dynamic(
             test_framing=test_framing,
             fold=fold,
         )
+        fold_results_by_fold[fold] = fold_results
+        if use_saved_projections:
+            fold_detailed_by_fold[fold] = load_fold_detailed(
+                results_root=results_root,
+                model=model,
+                split_family=split_family,
+                benchmark=benchmark,
+                method=method,
+                fit_framing=fit_framing,
+                representation=representation,
+                val_framing=val_framing,
+                test_framing=test_framing,
+                fold=fold,
+            )
+        selected_layer = int(fold_results["selected_layer"])
         bundle_blob = load_test_bundle(
             hidden_states_root=hidden_states_root,
             model=model,
@@ -341,6 +454,7 @@ def run_dynamic(
                 f"First IDs: {preview}"
             )
         fold_data[fold] = {
+            "fold_results": fold_results,
             "selected_layer": selected_layer,
             "acts": acts,
             "sample_ids": sample_ids,
@@ -361,9 +475,10 @@ def run_dynamic(
             explicit_layers=explicit_layers,
             selected_layer=selected_layer,
             num_layers=num_layers,
+            fold_results=fold_data[fold]["fold_results"],
         )
 
-    pca_cache: Dict[Tuple[int, int, str, str], Any] = {}
+    pca_cache: Dict[Tuple[int, int, str, str, str], Any] = {}
     task_index_by_fold: Dict[int, Dict[str, List[int]]] = {
         fold: {} for fold in folds
     }
@@ -382,6 +497,7 @@ def run_dynamic(
             layer,
             task_id if task_id is not None else "__all__",
             approach,
+            projection_source,
         )
         if key in pca_cache:
             return pca_cache[key]
@@ -389,6 +505,7 @@ def run_dynamic(
         acts = fold_data[fold]["acts"]
         if task_id is None:
             features = acts[:, layer, :]
+            plot_sample_ids = fold_data[fold]["sample_ids"]
         else:
             idx = task_index_by_fold[fold].get(task_id, [])
             if len(idx) != 4:
@@ -396,6 +513,7 @@ def run_dynamic(
                     f"fold {fold} task {task_id}: expected 4 candidates, got {len(idx)}"
                 )
             features = acts[idx, layer, :]
+            plot_sample_ids = [fold_data[fold]["sample_ids"][i] for i in idx]
 
         reading = _reading_vector(fold_data[fold]["direction_vectors"], layer)
         if approach == "A":
@@ -407,11 +525,19 @@ def run_dynamic(
             )
             pca_cache[key] = (coords, arrow, captured)
         else:
+            x_scores = None
+            if use_saved_projections:
+                x_scores = test_projection_scores(
+                    fold_detailed_by_fold[fold],
+                    layer=layer,
+                    sample_ids=plot_sample_ids,
+                )
             coords = _compute_pca_approach_b(
                 features,
                 reading,
                 normalize_vector=normalize_vector,
                 seed=seed,
+                x_scores=x_scores,
             )
             pca_cache[key] = coords
         return pca_cache[key]
@@ -442,9 +568,9 @@ def run_dynamic(
     def _emit_outputs_for_approach(approach: str) -> None:
         approach_suffix = approach_filename_suffix(approach, normalize_vector)
         render_layer = (
-            _make_render_pca_a_panel(normalize_vector)
+            _make_render_pca_a_panel(normalize_vector, implementation_markers)
             if approach == "A"
-            else _make_render_pca_b_panel(normalize_vector)
+            else _make_render_pca_b_panel(normalize_vector, implementation_markers)
         )
         render_fold = (
             _make_render_pca_a_fold_panel()
@@ -474,6 +600,7 @@ def run_dynamic(
                             f"fold {fold} task {task_id}: ambiguous labels: {ambiguous_task[:5]}"
                         )
 
+                    sample_ids_task = [fold_data[fold]["sample_ids"][i] for i in idx]
                     panels = []
                     for layer in layers:
                         if approach == "A":
@@ -488,12 +615,19 @@ def run_dynamic(
                                     is_incorrect_task,
                                     arrow,
                                     captured,
+                                    sample_ids_task,
                                 )
                             )
                         else:
                             coords = _result_for(fold, layer, approach, task_id)
                             panels.append(
-                                (layer, coords, is_correct_task, is_incorrect_task)
+                                (
+                                    layer,
+                                    coords,
+                                    is_correct_task,
+                                    is_incorrect_task,
+                                    sample_ids_task,
+                                )
                             )
 
                     layer_tag_str = layer_tag(layer_mode, layers)
@@ -513,16 +647,18 @@ def run_dynamic(
                             f"results_file={results_path})"
                         )
                     outcome = "success" if correctness_index[lookup_key] else "fail"
+                    task_filename_suffix = approach_norm_filename_suffix(normalize_vector)
                     out_path = (
                         out_root
                         / f"fold_{fold}"
                         / "tasks"
                         / outcome
-                        / f"fold_{fold}_task_{task_safe}_layer_{layer_tag_str}{approach_suffix}.png"
+                        / pca_approach_dirname(approach)
+                        / f"fold_{fold}_task_{task_safe}_layer_{layer_tag_str}{task_filename_suffix}.png"
                     )
                     build_layer_grid(
                         panels=panels,
-                        selected_layer=int(fold_data[fold]["selected_layer"]),
+                        fold_results=fold_data[fold]["fold_results"],
                         fig_title=f"{dataset_label} {benchmark} | fold={fold} | task={task_id}",
                         out_path=out_path,
                         render_panel=render_layer,
@@ -533,6 +669,7 @@ def run_dynamic(
             layers = resolved_layers_per_fold[fold]
             if len(layers) == 1:
                 layer = layers[0]
+                highlight = layer_highlight_state(fold_data[fold]["fold_results"], layer)
                 out_path = (
                     out_root
                     / f"fold_{fold}"
@@ -546,12 +683,11 @@ def run_dynamic(
                             coords=coords,
                             is_correct=fold_data[fold]["is_correct"],
                             is_incorrect=fold_data[fold]["is_incorrect"],
-                            title="",
                             arrow=arrow,
-                            captured=captured,
                         ),
                         title=f"{dataset_label} {benchmark} | fold={fold}, layer={layer}",
                         out_path=out_path,
+                        highlight=highlight,
                     )
                 else:
                     coords = _result_for(fold, layer, approach)
@@ -561,11 +697,11 @@ def run_dynamic(
                             coords=c,
                             is_correct=fold_data[fold]["is_correct"],
                             is_incorrect=fold_data[fold]["is_incorrect"],
-                            title="",
                             normalize_vector=normalize_vector,
                         ),
                         title=f"{dataset_label} {benchmark} | fold={fold}, layer={layer}",
                         out_path=out_path,
+                        highlight=highlight,
                     )
                 outputs.append(str(out_path))
             else:
@@ -601,7 +737,7 @@ def run_dynamic(
                 )
                 build_layer_grid(
                     panels=panels,
-                    selected_layer=int(fold_data[fold]["selected_layer"]),
+                    fold_results=fold_data[fold]["fold_results"],
                     fig_title=f"{dataset_label} {benchmark} | fold={fold}",
                     out_path=out_path,
                     render_panel=render_layer,
@@ -650,6 +786,7 @@ def run_dynamic(
                 )
                 build_fold_grid(
                     panels=panels,
+                    fold_results_by_fold=fold_results_by_fold,
                     fig_title=f"{dataset_label} {benchmark} | folds={folds}",
                     out_path=out_path,
                     render_panel=render_fold,
@@ -695,7 +832,7 @@ def run_dynamic(
                     )
                     build_layer_grid(
                         panels=panels,
-                        selected_layer=int(fold_data[fold]["selected_layer"]),
+                        fold_results=fold_data[fold]["fold_results"],
                         fig_title=f"{dataset_label} {benchmark} | fold={fold}",
                         out_path=out_path,
                         render_panel=render_layer,
@@ -718,6 +855,8 @@ def run_dynamic(
         "explicit_task_ids": explicit_task_ids,
         "approach": list(approaches),
         "normalize_vector": normalize_vector,
+        "implementation_markers": implementation_markers,
+        "projection_source": projection_source,
         "vectors_root": str(vectors_root),
         "seed": seed,
         "output_paths": outputs,
@@ -754,7 +893,7 @@ def main() -> None:
         "--layers",
         nargs="+",
         default=["selected"],
-        help="One of: 'selected', 'all', or explicit layer indices (e.g. 2 5 12).",
+        help="One of: 'selected', 'relevant', 'all', or explicit layer indices (e.g. 2 5 12).",
     )
     parser.add_argument("--split-family", default="icse26")
     parser.add_argument("--hidden-states-root", default="hidden_states")
@@ -780,6 +919,19 @@ def main() -> None:
         action="store_true",
         help="Unit-normalize the reading vector for projection scaling.",
     )
+    parser.add_argument(
+        "--implementation-markers",
+        action="store_true",
+        help="In --tasks mode, use distinct markers per implementation id.",
+    )
+    parser.add_argument(
+        "--projection-source",
+        choices=["recompute", "saved"],
+        default="recompute",
+        help="Approach B x-axis: recompute activations @ reading vector, or load "
+             "per-sample scores from results/.../detailed.json (approach A always "
+             "recomputes 2D PCA on activations).",
+    )
     parser.add_argument("--output-dir", default="visualizations/pca")
     args = parser.parse_args()
 
@@ -799,6 +951,8 @@ def main() -> None:
     layer_mode, explicit_layers = parse_layer_selector(args.layers)
     task_mode, explicit_task_ids = parse_task_selector(args.tasks)
     approaches = parse_approach_selector(args.approach)
+    if args.implementation_markers and not task_mode:
+        raise ValueError("--implementation-markers requires --tasks")
 
     summary = run_dynamic(
         hidden_states_root=Path(args.hidden_states_root),
@@ -823,6 +977,8 @@ def main() -> None:
         explicit_task_ids=explicit_task_ids,
         approaches=approaches,
         normalize_vector=args.normalize_vector,
+        implementation_markers=args.implementation_markers,
+        projection_source=parse_projection_source(args.projection_source),
     )
     print(json.dumps(summary, indent=2))
 

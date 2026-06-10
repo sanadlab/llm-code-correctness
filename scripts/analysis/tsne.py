@@ -23,23 +23,29 @@ import numpy as np
 from sklearn.manifold import TSNE
 
 from scripts.analysis.viz_common import (
+    LayerHighlight,
+    apply_layer_axes_style,
     build_fold_grid,
     build_layer_grid,
     build_single_scatter,
     classify_labels_strict,
     cross_fold_dirname,
     dataset_results_path,
+    highlighted_subplot_title_kwargs,
+    layer_highlight_state,
     layer_tag,
+    load_fold_results,
     load_task_correctness_index,
     load_test_bundle,
     parse_fold_selector,
     parse_layer_selector,
     parse_task_selector,
-    read_selected_layer,
     resolve_all_folds,
     resolve_layers_for_fold,
     safe_task_id,
     scatter_correctness,
+    scatter_task_implementations,
+    set_layer_subplot_title,
     viz_dataset_label,
     viz_output_path_parts,
 )
@@ -81,48 +87,83 @@ def _plot_on_axis(
     coords: np.ndarray,
     is_correct: np.ndarray,
     is_incorrect: np.ndarray,
-    title: str,
     background_coords: np.ndarray | None = None,
+    sample_ids: Sequence[str] | None = None,
+    add_legend: bool = True,
 ) -> None:
-    scatter_correctness(
-        ax=ax,
-        coords=coords,
-        is_correct=is_correct,
-        is_incorrect=is_incorrect,
-        background_coords=background_coords,
-    )
-    ax.set_title(title)
+    if sample_ids is not None:
+        scatter_task_implementations(
+            ax=ax,
+            coords=coords,
+            sample_ids=sample_ids,
+            is_correct=is_correct,
+            background_coords=background_coords,
+            add_legend=add_legend,
+        )
+    else:
+        scatter_correctness(
+            ax=ax,
+            coords=coords,
+            is_correct=is_correct,
+            is_incorrect=is_incorrect,
+            background_coords=background_coords,
+            add_legend=add_legend,
+        )
     ax.set_xlabel("tSNE-1")
     ax.set_ylabel("tSNE-2")
-    ax.legend(loc="best", fontsize=9)
     ax.grid(alpha=0.2)
 
 
-def _render_tsne_layer_panel(ax, panel: Any, selected_layer: int) -> None:
-    if len(panel) == 5:
-        layer, coords, is_correct, is_incorrect, background_coords = panel
-    else:
-        layer, coords, is_correct, is_incorrect = panel
-        background_coords = None
-    suffix = " (selected)" if layer == selected_layer else ""
-    _plot_on_axis(
-        ax=ax,
-        coords=coords,
-        is_correct=is_correct,
-        is_incorrect=is_incorrect,
-        title=f"layer={layer}{suffix}",
-        background_coords=background_coords,
-    )
+def _make_render_tsne_layer_panel(use_implementation_markers: bool):
+    def _render(
+        ax,
+        panel: Any,
+        highlight: LayerHighlight,
+        *,
+        add_legend: bool = True,
+    ) -> None:
+        sample_ids = None
+        if len(panel) == 6:
+            layer, coords, is_correct, is_incorrect, background_coords, sample_ids = panel
+        elif len(panel) == 5:
+            layer, coords, is_correct, is_incorrect, background_coords = panel
+        else:
+            layer, coords, is_correct, is_incorrect = panel
+            background_coords = None
+        apply_layer_axes_style(ax, highlight)
+        _plot_on_axis(
+            ax=ax,
+            coords=coords,
+            is_correct=is_correct,
+            is_incorrect=is_incorrect,
+            background_coords=background_coords,
+            sample_ids=sample_ids if use_implementation_markers else None,
+            add_legend=add_legend,
+        )
+        set_layer_subplot_title(ax, layer, highlight)
+
+    return _render
 
 
-def _render_tsne_fold_panel(ax, panel: Any) -> None:
+def _render_tsne_fold_panel(
+    ax,
+    panel: Any,
+    highlight: LayerHighlight,
+    *,
+    add_legend: bool = True,
+) -> None:
     fold, layer, coords, is_correct, is_incorrect = panel
+    apply_layer_axes_style(ax, highlight)
     _plot_on_axis(
         ax=ax,
         coords=coords,
         is_correct=is_correct,
         is_incorrect=is_incorrect,
-        title=f"fold={fold}, layer={layer}",
+        add_legend=add_legend,
+    )
+    ax.set_title(
+        f"fold={fold}, layer={layer}",
+        **highlighted_subplot_title_kwargs(highlight),
     )
 
 
@@ -153,10 +194,14 @@ def run_dynamic(
     explicit_task_ids: List[str] | None,
     task_view_mode: str,
     show_background: bool,
+    implementation_markers: bool,
 ) -> Dict[str, object]:
+    render_layer_panel = _make_render_tsne_layer_panel(implementation_markers)
+    fold_results_by_fold: Dict[int, dict] = {}
+
     fold_data: Dict[int, Dict[str, object]] = {}
     for fold in folds:
-        selected_layer = read_selected_layer(
+        fold_results = load_fold_results(
             results_root=results_root,
             model=model,
             split_family=split_family,
@@ -168,6 +213,8 @@ def run_dynamic(
             test_framing=test_framing,
             fold=fold,
         )
+        fold_results_by_fold[fold] = fold_results
+        selected_layer = int(fold_results["selected_layer"])
         bundle_blob = load_test_bundle(
             hidden_states_root=hidden_states_root,
             model=model,
@@ -194,6 +241,7 @@ def run_dynamic(
                 f"First IDs: {preview}"
             )
         fold_data[fold] = {
+            "fold_results": fold_results,
             "selected_layer": selected_layer,
             "acts": acts,
             "sample_ids": sample_ids,
@@ -213,6 +261,7 @@ def run_dynamic(
             explicit_layers=explicit_layers,
             selected_layer=selected_layer,
             num_layers=num_layers,
+            fold_results=fold_data[fold]["fold_results"],
         )
 
     tsne_cache: Dict[Tuple[int, int, str, str], np.ndarray] = {}
@@ -314,6 +363,7 @@ def run_dynamic(
                     coords_all = None
                     if use_background:
                         coords_all = _coords_for(fold, layer, None)
+                    sample_ids_task = [fold_data[fold]["sample_ids"][i] for i in idx]
                     panels.append(
                         (
                             layer,
@@ -321,6 +371,7 @@ def run_dynamic(
                             is_correct_task,
                             is_incorrect_task,
                             coords_all if use_background else None,
+                            sample_ids_task,
                         )
                     )
 
@@ -353,10 +404,10 @@ def run_dynamic(
                 )
                 build_layer_grid(
                     panels=panels,
-                    selected_layer=int(fold_data[fold]["selected_layer"]),
+                    fold_results=fold_data[fold]["fold_results"],
                     fig_title=f"{dataset_label} {benchmark} | fold={fold} | task={task_id}",
                     out_path=out_path,
-                    render_panel=_render_tsne_layer_panel,
+                    render_panel=render_layer_panel,
                 )
                 outputs.append(str(out_path))
     elif len(folds) == 1:
@@ -364,6 +415,7 @@ def run_dynamic(
         layers = resolved_layers_per_fold[fold]
         if len(layers) == 1:
             layer = layers[0]
+            highlight = layer_highlight_state(fold_data[fold]["fold_results"], layer)
             out_path = out_root / f"fold_{fold}" / f"fold_{fold}_layer_{layer}.png"
             build_single_scatter(
                 plot_axes=lambda ax: _plot_on_axis(
@@ -371,10 +423,10 @@ def run_dynamic(
                     coords=_coords_for(fold, layer),
                     is_correct=fold_data[fold]["is_correct"],
                     is_incorrect=fold_data[fold]["is_incorrect"],
-                    title="",
                 ),
                 title=f"{dataset_label} {benchmark} | fold={fold}, layer={layer}",
                 out_path=out_path,
+                highlight=highlight,
             )
             outputs.append(str(out_path))
         else:
@@ -396,10 +448,10 @@ def run_dynamic(
             )
             build_layer_grid(
                 panels=panels,
-                selected_layer=int(fold_data[fold]["selected_layer"]),
+                fold_results=fold_data[fold]["fold_results"],
                 fig_title=f"{dataset_label} {benchmark} | fold={fold}",
                 out_path=out_path,
-                render_panel=_render_tsne_layer_panel,
+                render_panel=render_layer_panel,
             )
             outputs.append(str(out_path))
     else:
@@ -426,6 +478,7 @@ def run_dynamic(
             out_path = out_root / container / f"{container}_layer_{layer_tag_str}.png"
             build_fold_grid(
                 panels=panels,
+                fold_results_by_fold=fold_results_by_fold,
                 fig_title=f"{dataset_label} {benchmark} | folds={folds}",
                 out_path=out_path,
                 render_panel=_render_tsne_fold_panel,
@@ -457,10 +510,10 @@ def run_dynamic(
                 )
                 build_layer_grid(
                     panels=panels,
-                    selected_layer=int(fold_data[fold]["selected_layer"]),
+                    fold_results=fold_data[fold]["fold_results"],
                     fig_title=f"{dataset_label} {benchmark} | fold={fold}",
                     out_path=out_path,
-                    render_panel=_render_tsne_layer_panel,
+                    render_panel=render_layer_panel,
                 )
                 outputs.append(str(out_path))
 
@@ -477,6 +530,7 @@ def run_dynamic(
         "explicit_task_ids": explicit_task_ids,
         "task_view_mode": task_view_mode,
         "show_background": show_background,
+        "implementation_markers": implementation_markers,
         "seed": seed,
         "perplexity": perplexity,
         "per_task_perplexity": per_task_perplexity,
@@ -516,7 +570,7 @@ def main() -> None:
         "--layers",
         nargs="+",
         default=["selected"],
-        help="One of: 'selected', 'all', or explicit layer indices (e.g. 2 5 12).",
+        help="One of: 'selected', 'relevant', 'all', or explicit layer indices (e.g. 2 5 12).",
     )
     parser.add_argument("--split-family", default="icse26")
     parser.add_argument("--hidden-states-root", default="hidden_states")
@@ -548,6 +602,11 @@ def main() -> None:
         help="In global_subset per-task mode, draw faint fold background points "
              "behind the highlighted task points.",
     )
+    parser.add_argument(
+        "--implementation-markers",
+        action="store_true",
+        help="In --tasks mode, use distinct markers per implementation id.",
+    )
     parser.add_argument("--output-dir", default="visualizations/tsne")
     args = parser.parse_args()
 
@@ -572,6 +631,8 @@ def main() -> None:
         )
     if args.show_background and not task_mode:
         raise ValueError("--show-background requires --tasks")
+    if args.implementation_markers and not task_mode:
+        raise ValueError("--implementation-markers requires --tasks")
 
     summary = run_dynamic(
         hidden_states_root=Path(args.hidden_states_root),
@@ -599,6 +660,7 @@ def main() -> None:
         explicit_task_ids=explicit_task_ids,
         task_view_mode=args.task_view_mode,
         show_background=args.show_background,
+        implementation_markers=args.implementation_markers,
     )
     print(json.dumps(summary, indent=2))
 
