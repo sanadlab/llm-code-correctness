@@ -275,9 +275,35 @@ def _infer_node_type(node: astroid_nodes.NodeNG) -> str | None:
     return _resolve_inferred_type(inferred)
 
 
+def _annotation_for_arg(arg: astroid_nodes.AssignName) -> astroid_nodes.NodeNG | None:
+    """Return the annotation node for a function parameter, if any."""
+    annotation = getattr(arg, "annotation", None)
+    if annotation is not None:
+        return annotation
+
+    parent = arg.parent
+    if not isinstance(parent, astroid_nodes.Arguments):
+        return None
+
+    args_node = parent
+    if arg in args_node.arguments:
+        idx = args_node.arguments.index(arg)
+        if idx < len(args_node.annotations):
+            return args_node.annotations[idx]
+    if arg in args_node.kwonlyargs:
+        idx = args_node.kwonlyargs.index(arg)
+        if idx < len(args_node.kwonlyargs_annotations):
+            return args_node.kwonlyargs_annotations[idx]
+    if args_node.vararg == arg.name and args_node.varargannotation is not None:
+        return args_node.varargannotation
+    if args_node.kwarg == arg.name and args_node.kwargannotation is not None:
+        return args_node.kwargannotation
+    return None
+
+
 def _infer_arg_type(arg: astroid_nodes.AssignName) -> str | None:
     """Infer a parameter type from its annotation, avoiding fragile arg.infer()."""
-    annotation = getattr(arg, "annotation", None)
+    annotation = _annotation_for_arg(arg)
     if annotation is None:
         return None
     if isinstance(annotation, astroid_nodes.Name):
@@ -330,12 +356,28 @@ def _remove_var_type(
             del type_to_vars[old_typ]
 
 
-def _infer_return_type(func: astroid_nodes.FunctionDef) -> str | None:
+def _infer_assign_name_type(node: astroid_nodes.AssignName) -> str | None:
+    """Infer type of an assignment target from itself or its RHS."""
+    typ = _infer_node_type(node)
+    if typ is not None:
+        return typ
+    parent = node.parent
+    if isinstance(parent, astroid_nodes.Assign):
+        return _infer_node_type(parent.value)
+    return None
+
+
+def _infer_return_type(
+    func: astroid_nodes.FunctionDef,
+    var_to_type: dict[str, str] | None = None,
+) -> str | None:
     return_types: list[str] = []
     for ret in func.nodes_of_class(astroid_nodes.Return):
         if ret.value is None:
             continue
         typ = _infer_node_type(ret.value)
+        if typ is None and var_to_type and isinstance(ret.value, astroid_nodes.Name):
+            typ = var_to_type.get(ret.value.name)
         if typ is not None:
             return_types.append(typ)
     if not return_types:
@@ -373,17 +415,6 @@ def _build_type_maps(
     if func is None:
         return coord_to_type, type_to_vars, var_to_type
 
-    target_classes = (astroid_nodes.Name, astroid_nodes.AssignName, astroid_nodes.Call, astroid_nodes.Const)
-    for node in func.nodes_of_class(target_classes):
-        typ = _infer_node_type(node)
-        if typ is None:
-            continue
-        coord = _node_coord(node)
-        if coord is not None:
-            coord_to_type[coord] = typ
-        if isinstance(node, astroid_nodes.AssignName):
-            _register_var_type(var_to_type, type_to_vars, node.name, typ)
-
     for arg in func.args.arguments:
         typ = _infer_arg_type(arg)
         if typ is None:
@@ -393,7 +424,29 @@ def _build_type_maps(
             coord_to_type[coord] = typ
         _register_var_type(var_to_type, type_to_vars, arg.name, typ)
 
-    return_type = _infer_return_type(func)
+    target_classes = (astroid_nodes.Name, astroid_nodes.AssignName, astroid_nodes.Call, astroid_nodes.Const)
+    for node in func.nodes_of_class(target_classes):
+        if isinstance(node, astroid_nodes.AssignName):
+            typ = _infer_assign_name_type(node)
+        else:
+            typ = _infer_node_type(node)
+        if typ is None:
+            continue
+        coord = _node_coord(node)
+        if coord is not None:
+            coord_to_type[coord] = typ
+        if isinstance(node, astroid_nodes.AssignName):
+            _register_var_type(var_to_type, type_to_vars, node.name, typ)
+
+    for node in func.nodes_of_class(astroid_nodes.Name):
+        coord = _node_coord(node)
+        if coord is None or coord in coord_to_type:
+            continue
+        typ = var_to_type.get(node.name)
+        if typ is not None:
+            coord_to_type[coord] = typ
+
+    return_type = _infer_return_type(func, var_to_type)
     if return_type is not None:
         coord_to_type[_RETURN_COORD] = return_type
 
@@ -422,10 +475,25 @@ def _is_user_variable(name: str, in_scope: set[str]) -> bool:
     return name in in_scope
 
 
-def _binop_operands_type_ok(node: ast.BinOp, coord_to_type: dict[TypeCoord, str]) -> bool:
+def _operand_primitive_type(
+    operand: ast.AST,
+    coord_to_type: dict[TypeCoord, str],
+    var_to_type: dict[str, str] | None = None,
+) -> str | None:
+    typ = coord_to_type.get(_ast_coord(operand))
+    if typ is None and var_to_type and isinstance(operand, ast.Name):
+        typ = var_to_type.get(operand.id)
+    return typ
+
+
+def _binop_operands_type_ok(
+    node: ast.BinOp,
+    coord_to_type: dict[TypeCoord, str],
+    var_to_type: dict[str, str] | None = None,
+) -> bool:
     """True when both BinOp operands are inferable and not sequence types."""
-    left_type = coord_to_type.get(_ast_coord(node.left))
-    right_type = coord_to_type.get(_ast_coord(node.right))
+    left_type = _operand_primitive_type(node.left, coord_to_type, var_to_type)
+    right_type = _operand_primitive_type(node.right, coord_to_type, var_to_type)
     if left_type is None or right_type is None:
         return False
     if left_type in _SEQUENCE_TYPES or right_type in _SEQUENCE_TYPES:
@@ -473,13 +541,13 @@ class AOR(MutationOperator):
     code = "AOR"
 
     def enumerate_mutations(self, tree, entry_point, source_code):
-        coord_to_type, _, _ = _build_type_maps(source_code, entry_point)
+        coord_to_type, _, var_to_type = _build_type_maps(source_code, entry_point)
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.BinOp) and type(node.op) in _ARITH_OPS:
-                if not _binop_operands_type_ok(node, coord_to_type):
+                if not _binop_operands_type_ok(node, coord_to_type, var_to_type):
                     continue
                 orig_type = type(node.op)
                 repl_idx = 0
@@ -514,13 +582,13 @@ class AOD(MutationOperator):
     code = "AOD"
 
     def enumerate_mutations(self, tree, entry_point, source_code):
-        coord_to_type, _, _ = _build_type_maps(source_code, entry_point)
+        coord_to_type, _, var_to_type = _build_type_maps(source_code, entry_point)
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.BinOp) and type(node.op) in _ARITH_OPS:
-                if not _binop_operands_type_ok(node, coord_to_type):
+                if not _binop_operands_type_ok(node, coord_to_type, var_to_type):
                     continue
 
                 # Default behavior: produce both left- and right- deletion variants
@@ -558,14 +626,19 @@ class AOI(MutationOperator):
     code = "AOI"
 
     def enumerate_mutations(self, tree, entry_point, source_code):
+        # 1. Fetch the type maps
+        coord_to_type, _, var_to_type = _build_type_maps(source_code, entry_point)
+        
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
+        
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                # Keep this operator conservative: do not mutate names that are
-                # used as call targets, since "sum(coins)" -> "(sum + 1)(coins)"
-                # is not a meaningful arithmetic change.
+                # 2. Check if the type is strictly numeric
+                node_type = coord_to_type.get(_ast_coord(node)) or var_to_type.get(node.id)
+                if node_type not in {"int", "float"}:
+                    continue
                 if any(
                     isinstance(parent, ast.Call) and parent.func is node
                     for stmt in body
@@ -736,13 +809,19 @@ class COD(MutationOperator):
 
 
 # ── Unary ─────────────────────────────────────────────────
-
 class UOI(MutationOperator):
-    """Insert a unary operator: -x or not x."""
+    """Insert a unary operator: -x or not x.
+    
+    The numeric negation (-x) is restricted strictly to variables inferred
+    as an 'int' or 'float' type.
+    """
     name = "UnaryOperatorInsertion"
     code = "UOI"
 
     def enumerate_mutations(self, tree, entry_point, source_code):
+        # Build type maps using the existing astroid inference helper
+        coord_to_type, _, var_to_type = _build_type_maps(source_code, entry_point)
+        
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -762,27 +841,36 @@ class UOI(MutationOperator):
                 if id(node) in call_target_ids:
                     continue
                 
-                # -x
-                neg = ast.UnaryOp(op=ast.USub(), operand=copy.deepcopy(node))
-                new_tree_neg = _deep_replace(tree, node, neg)
-                mutations.append(Mutation(
-                    operator=self.name, operator_code=self.code,
-                    site_index=site_idx, replacement_index=0,
-                    site=MutationSite(
-                        line=node.lineno, col=node.col_offset,
-                        node_type="Name",
-                        original=node.id,
-                        replacement=f"-{node.id}",
-                    ),
-                    tree=new_tree_neg,
-                ))
+                repl_idx = 0
+                any_produced = False
                 
-                # not x
+                # Fetch inferred type of the variable node
+                node_type = coord_to_type.get(_ast_coord(node)) or var_to_type.get(node.id)
+                
+                # ── Case 1: -x (Numeric types only) ─────────────────
+                if node_type in {"int", "float"}:
+                    neg = ast.UnaryOp(op=ast.USub(), operand=copy.deepcopy(node))
+                    new_tree_neg = _deep_replace(tree, node, neg)
+                    mutations.append(Mutation(
+                        operator=self.name, operator_code=self.code,
+                        site_index=site_idx, replacement_index=repl_idx,
+                        site=MutationSite(
+                            line=node.lineno, col=node.col_offset,
+                            node_type="Name",
+                            original=node.id,
+                            replacement=f"-{node.id}",
+                        ),
+                        tree=new_tree_neg,
+                    ))
+                    repl_idx += 1
+                    any_produced = True
+                
+                # ── Case 2: not x (Universal fallback) ───────────────
                 not_node = ast.UnaryOp(op=ast.Not(), operand=copy.deepcopy(node))
                 new_tree_not = _deep_replace(tree, node, not_node)
                 mutations.append(Mutation(
                     operator=self.name, operator_code=self.code,
-                    site_index=site_idx, replacement_index=1,
+                    site_index=site_idx, replacement_index=repl_idx,
                     site=MutationSite(
                         line=node.lineno, col=node.col_offset,
                         node_type="Name",
@@ -791,7 +879,12 @@ class UOI(MutationOperator):
                     ),
                     tree=new_tree_not,
                 ))
-                site_idx += 1
+                repl_idx += 1
+                any_produced = True
+                
+                if any_produced:
+                    site_idx += 1
+                    
         return mutations
         
 class UOD(MutationOperator):
