@@ -11,6 +11,12 @@ BCB_DIR ?= third_party/bigcodebench
 # HF cache root. Override with: make download-models HF_HOME=/my/path
 HF_HOME ?= $(SCRATCH)/hf-models
 
+# Hidden-state extraction sweep (make collect-hidden-states)
+HS_MODELS ?= mistralai/Mistral-7B-Instruct-v0.3 Qwen/Qwen2.5-Coder-7B-Instruct infly/OpenCoder-8B-Instruct codellama/CodeLlama-7b-Instruct-hf
+HS_BENCHMARKS ?= bigcodebench humaneval
+HS_OUTPUT_DIR ?= hidden_states
+HS_FORCE ?=
+
 VENV_PYTHON := $(VENV_DIR)/bin/python
 HPC_VENV_PYTHON := $(HPC_VENV_DIR)/bin/python
 
@@ -26,8 +32,9 @@ else
 endif
 
 .PHONY: setup setup-env setup-hpc update update-env update-hpc \
-        submodules compress decompress download-models \
-        compress-artifacts decompress-artifacts download-artifacts
+        submodules compress decompress download-models collect-hidden-states \
+        compress-artifacts decompress-artifacts download-artifacts \
+        pull-eval-image
 
 # ---------------------------------------------------------------------------
 # Environment setup
@@ -141,6 +148,37 @@ download-models:
 		"$(ACTIVE_VENV_PYTHON)" scripts/util/download_models.py
 
 # ---------------------------------------------------------------------------
+# Hidden states (ICSE26 mean_diff protocol)
+# ---------------------------------------------------------------------------
+# Runs cache_hidden_states.py for each model × benchmark (8 jobs by default).
+# Override subsets, e.g.:
+#     make collect-hidden-states HS_MODELS="mistralai/Mistral-7B-Instruct-v0.3"
+#     make collect-hidden-states HS_BENCHMARKS=humaneval
+# Re-extract existing bundles: make collect-hidden-states HS_FORCE=1
+
+collect-hidden-states:
+	@set -e; \
+	if [ ! -x "$(ACTIVE_VENV_PYTHON)" ]; then \
+		echo "Error: venv not found. Run 'make setup' or 'make setup-hpc' first."; \
+		exit 1; \
+	fi; \
+	for model in $(HS_MODELS); do \
+	  for bench in $(HS_BENCHMARKS); do \
+	    echo "=== $$model / $$bench ==="; \
+	    HF_HOME="$(HF_HOME)" HF_HUB_CACHE="$(HF_HOME)" \
+	    "$(ACTIVE_VENV_PYTHON)" scripts/extract/cache_hidden_states.py \
+	      --models "$$model" \
+	      --dataset-source icse26 --benchmark "$$bench" \
+	      --protocol mean_diff \
+	      --data-splits validate test \
+	      --representations response_avg \
+	      --output-dir "$(HS_OUTPUT_DIR)" \
+	      $(if $(HS_FORCE),--force,) \
+	      --verify; \
+	  done; \
+	done
+
+# ---------------------------------------------------------------------------
 # Pre-computed artifacts (vectors/ and results/)
 # ---------------------------------------------------------------------------
 # Both directories are too large for the git remote and are hosted externally.
@@ -179,9 +217,26 @@ decompress-artifacts:
 		echo "Missing $(RESULTS_ARCHIVE). Run 'make download-artifacts' first."; \
 	fi
 
-# Push viewer_platform/ to a standalone Vercel deploy repo (see viewer_platform/DEPLOY.md).
-# Requires: VIEWER_DEPLOY_REPO=sanadlab/llm-code-correctness-viewer
-# Optional: VIEWER_DEPLOY_TOKEN=ghp_...
-sync-viewer-deploy:
-	@chmod +x scripts/sync-viewer-deploy-repo.sh
-	@./scripts/sync-viewer-deploy-repo.sh
+# ---------------------------------------------------------------------------
+# BigCodeBench evaluation container (Singularity/Apptainer)
+# ---------------------------------------------------------------------------
+# Phase 1 validation steps run BigCodeBench inside a Singularity image. Pull it
+# once into the path referenced by configs/phase1/bigcodebench.yaml (sif_path).
+# Override the destination with: make pull-eval-image SIF_PATH=/my/path.sif
+
+SIF_PATH ?= $(SCRATCH)/containers/bigcodebench-evaluate.sif
+
+pull-eval-image:
+	@if [ -z "$(SCRATCH)" ] && [ "$(SIF_PATH)" = "$(SCRATCH)/containers/bigcodebench-evaluate.sif" ]; then \
+		echo "Error: SCRATCH is not set. Export SCRATCH or pass SIF_PATH explicitly."; \
+		exit 1; \
+	fi
+	@mkdir -p "$(dir $(SIF_PATH))" "$(SCRATCH)/.singularity/cache"
+	@if [ -f "$(SIF_PATH)" ]; then \
+		echo "SIF already exists: $(SIF_PATH)"; \
+	else \
+		echo "Pulling bigcodebench-evaluate image -> $(SIF_PATH) ..."; \
+		SINGULARITY_CACHEDIR="$(SCRATCH)/.singularity/cache" \
+		APPTAINER_CACHEDIR="$(SCRATCH)/.singularity/cache" \
+		singularity pull "$(SIF_PATH)" docker://bigcodebench/bigcodebench-evaluate:latest; \
+	fi

@@ -9,8 +9,8 @@ JOB_SCRIPT="${SCRIPT_DIR}/../jobs/phase1_validate_confounds.sbatch"
 CONFIG="configs/phase1/bigcodebench.yaml"
 STEP="validate_confounds"
 JOB_NAME="phase1_val_confounds"
-PARTITION=""
-ACCOUNT=""
+PARTITION="cs"
+ACCOUNT="condo_cs_nadi"
 QOS=""
 DEPENDENCY=""
 CPUS=16
@@ -23,7 +23,7 @@ FORCE=0
 DRY_RUN=0
 
 if [[ -n "${SCRATCH:-}" ]]; then
-    ENV_DIR_DEFAULT="${SCRATCH}/envs/project-abu-dhabi"
+    ENV_DIR_DEFAULT="${SCRATCH}/envs/llm-code-correctness"
 else
     ENV_DIR_DEFAULT=""
 fi

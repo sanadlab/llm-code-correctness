@@ -2,6 +2,8 @@
 #SBATCH --job-name=phase1_confound
 #SBATCH --output=logs/slurm/phase1_confound.%j.out
 #SBATCH --error=logs/slurm/phase1_confound.%j.err
+#SBATCH --partition=cs
+#SBATCH --account=condo_cs_nadi
 
 set -euo pipefail
 
@@ -15,7 +17,7 @@ CONFIG=${CONFIG:-configs/phase1/bigcodebench.yaml}
 STEP=${STEP:-confound}
 PYTHON_MODULE=${PYTHON_MODULE:-python/3.11.3}
 CUDA_MODULE=${CUDA_MODULE:-cuda/12.2.0}
-ENV_DIR=${ENV_DIR:-${SCRATCH:-}/envs/project-abu-dhabi}
+ENV_DIR=${ENV_DIR:-${SCRATCH:-}/envs/llm-code-correctness}
 HF_HOME=${HF_HOME:-${SCRATCH:-}/hf-models}
 FORCE=${FORCE:-0}
 
