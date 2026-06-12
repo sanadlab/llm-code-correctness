@@ -37,10 +37,13 @@ Requires `zstd` on PATH if only `.jsonl.zst` exists (API decompresses via `zstd 
 
 ## Deploy on Vercel
 
-1. Import repo, set **Root Directory** to `viewer`
-2. Deploy
+Use a **separate deploy repo** synced from this folder (see **[DEPLOY.md](./DEPLOY.md)**):
 
-On Vercel the dataset API is unavailable (no `dataset/` tree). Use **Manual upload** with a row cap, or host sample slices under `public/`.
+- Monorepo path: `llm-code-correctness/viewer_platform/`
+- Deploy repo: e.g. `sanadlab/llm-code-correctness-viewer` (Next.js at repo root, no subfolder)
+- Sync via GitHub Action or `scripts/sync-viewer-deploy-repo.sh`
+
+On Vercel the dataset API is unavailable (no `dataset/` tree). Use **Upload files** in the UI.
 
 ## Phase 2 diff behaviour
 

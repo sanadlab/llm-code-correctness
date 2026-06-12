@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
 
 const ReactDiffViewer = dynamic(() => import("react-diff-viewer-continued"), {
   ssr: false,
@@ -20,23 +19,14 @@ type CodeDiffProps = {
 };
 
 export function CodeDiff({ oldValue, newValue, oldTitle, newTitle }: CodeDiffProps) {
-  const [useDarkTheme, setUseDarkTheme] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    setUseDarkTheme(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setUseDarkTheme(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-
   return (
     <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
       <ReactDiffViewer
         oldValue={oldValue}
         newValue={newValue}
         splitView
-        useDarkTheme={useDarkTheme}
+        useDarkTheme
+        showDiffOnly={false}
         leftTitle={oldTitle}
         rightTitle={newTitle}
         styles={{
@@ -70,6 +60,7 @@ export function CodeDiff({ oldValue, newValue, oldTitle, newTitle }: CodeDiffPro
             fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
             fontSize: "12px",
             lineHeight: "1.5",
+            color: "#e4e4e7",
           },
         }}
       />
