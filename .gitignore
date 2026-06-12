@@ -1,5 +1,6 @@
 # Raw brainstorming / design notes
 init.txt
+Untitled
 
 # Generated data and outputs
 data/
@@ -9,6 +10,9 @@ dataset/bigcodebench/intermediate/*/
 # Ignore all top-level .jsonl files in intermediate, but not .jsonl.zst
 dataset/bigcodebench/intermediate/*.jsonl
 !dataset/bigcodebench/intermediate/*.jsonl.zst
+# Ignore run outputs and test datasets
+dataset/bigcodebench/runs/
+dataset/test/
 
 # Mutation_DS phase2 splits live inside dataset/bigcodebench/phase2.tar.zst.
 # Hide the decompressed working tree; keep the bundle itself tracked.
@@ -32,6 +36,8 @@ dist/
 build/
 *.egg
 .eggs/
+.coverage
+.ipynb_checkpoints/
 
 # Virtual environments
 .venv/
@@ -41,6 +47,7 @@ env/
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 
