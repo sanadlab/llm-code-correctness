@@ -28,11 +28,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         # If you use pytest instead of the standard unittest library, install it here:
-        # pip install pytest 
+        pip install pytest 
 
     # Step 4: Execute the tests
     - name: Run tests
       run: |
-        python -m unittest discover -s src/unit_tests/
+        # python -m unittest discover -s src/unit_tests/
         # Or if you use pytest: 
-        # pytest src/unit_tests/
+        pytest src/unit_tests/
