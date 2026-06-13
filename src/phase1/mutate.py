@@ -48,7 +48,12 @@ def mutate(cfg: Phase1Config) -> None:
 
 def _mutate_task_worker(task: dict, operator_codes: list[str]) -> tuple[str, list[dict]]:
     operators = get_operators(operator_codes)
-    return task["task_id"], _mutate_task(task, operators, log=False)
+    task_id = task["task_id"]
+    try:
+        return task_id, _mutate_task(task, operators, log=False)
+    except Exception as exc:
+        print(f"  WARN: {task_id} mutation failed: {exc}")
+        return task_id, []
 
 
 def _mutate_task(task: dict, operators, log: bool = True) -> list[dict]:
@@ -79,7 +84,7 @@ def _mutate_task(task: dict, operators, log: bool = True) -> list[dict]:
 
     for op in operators:
         try:
-            mutations = op.enumerate_mutations(tree, entry_point)
+            mutations = op.enumerate_mutations(tree, entry_point, full_source)
         except (ValueError, KeyError) as e:
             # Function not found or other issue — skip operator for this task
             continue

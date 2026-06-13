@@ -2,8 +2,6 @@
 #SBATCH --job-name=phase1_confound
 #SBATCH --output=logs/slurm/phase1_confound.%j.out
 #SBATCH --error=logs/slurm/phase1_confound.%j.err
-#SBATCH --partition=cs
-#SBATCH --account=condo_cs_nadi
 
 set -euo pipefail
 

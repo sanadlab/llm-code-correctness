@@ -13,6 +13,10 @@ import copy
 from dataclasses import dataclass
 from typing import Any
 
+import astroid
+from astroid import Uninferable, nodes as astroid_nodes
+from astroid.exceptions import InferenceError
+
 # ── Site metadata ─────────────────────────────────────────
 
 @dataclass
@@ -211,13 +215,315 @@ def _delete_stmt_in_body(tree: ast.Module, func_node: ast.FunctionDef,
     raise ValueError("Could not find function in copied tree")
 
 
+# ── Astroid type inference ─────────────────────────────────
+
+Coord = tuple[int, int]
+ReturnCoord = tuple[str, int]
+TypeCoord = Coord | ReturnCoord
+
+_PRIMITIVE_PYTYPES: dict[str, str] = {
+    "builtins.int": "int",
+    "builtins.float": "float",
+    "builtins.str": "str",
+    "builtins.bool": "bool",
+    "builtins.list": "list",
+    "builtins.dict": "dict",
+    "builtins.tuple": "tuple",
+    "builtins.NoneType": "NoneType",
+}
+
+_SEQUENCE_TYPES = frozenset({"str", "list", "tuple"})
+
+_RETURN_COORD: ReturnCoord = ("__return__", 0)
+
+
+def _resolve_inferred_type(inferred: Any) -> str | None:
+    """Map an astroid inference result to a primitive type string, or None."""
+    if inferred is Uninferable or inferred is None:
+        return None
+
+    if isinstance(inferred, astroid_nodes.Const):
+        val = inferred.value
+        if val is None:
+            return "NoneType"
+        if type(val) is bool:
+            return "bool"
+        if type(val) is int:
+            return "int"
+        if type(val) is float:
+            return "float"
+        if type(val) is str:
+            return "str"
+        return None
+
+    pytype_fn = getattr(inferred, "pytype", None)
+    if pytype_fn is None:
+        return None
+    pytype = pytype_fn()
+    return _PRIMITIVE_PYTYPES.get(pytype)
+
+
+def _infer_node_type(node: astroid_nodes.NodeNG) -> str | None:
+    """Infer a node's type via astroid; return None if uninferable."""
+    try:
+        inferred = next(node.infer())
+    except (StopIteration, InferenceError, AttributeError, TypeError):
+        return None
+    except Exception:
+        # Astroid can raise on some parameter / scope edge cases; skip them.
+        return None
+    return _resolve_inferred_type(inferred)
+
+
+def _annotation_for_arg(arg: astroid_nodes.AssignName) -> astroid_nodes.NodeNG | None:
+    """Return the annotation node for a function parameter, if any."""
+    annotation = getattr(arg, "annotation", None)
+    if annotation is not None:
+        return annotation
+
+    parent = arg.parent
+    if not isinstance(parent, astroid_nodes.Arguments):
+        return None
+
+    args_node = parent
+    if arg in args_node.arguments:
+        idx = args_node.arguments.index(arg)
+        if idx < len(args_node.annotations):
+            return args_node.annotations[idx]
+    if arg in args_node.kwonlyargs:
+        idx = args_node.kwonlyargs.index(arg)
+        if idx < len(args_node.kwonlyargs_annotations):
+            return args_node.kwonlyargs_annotations[idx]
+    if args_node.vararg == arg.name and args_node.varargannotation is not None:
+        return args_node.varargannotation
+    if args_node.kwarg == arg.name and args_node.kwargannotation is not None:
+        return args_node.kwargannotation
+    return None
+
+
+def _infer_arg_type(arg: astroid_nodes.AssignName) -> str | None:
+    """Infer a parameter type from its annotation, avoiding fragile arg.infer()."""
+    annotation = _annotation_for_arg(arg)
+    if annotation is None:
+        return None
+    if isinstance(annotation, astroid_nodes.Name):
+        return _PRIMITIVE_PYTYPES.get(f"builtins.{annotation.name}")
+    if isinstance(annotation, astroid_nodes.Const):
+        return _resolve_inferred_type(annotation)
+    return _infer_node_type(annotation)
+
+
+def _node_coord(node: astroid_nodes.NodeNG) -> Coord | None:
+    lineno = getattr(node, "lineno", None)
+    col_offset = getattr(node, "col_offset", None)
+    if lineno is None or col_offset is None:
+        return None
+    return (lineno, col_offset)
+
+
+def _register_var_type(
+    var_to_type: dict[str, str],
+    type_to_vars: dict[str, list[str]],
+    name: str,
+    typ: str | None,
+) -> None:
+    """Record a variable's inferred type in both var_to_type and type_to_vars."""
+    if typ is None or not name:
+        return
+    existing = var_to_type.get(name)
+    if existing is not None and existing != typ:
+        # Conflicting inferences — drop the variable from both maps.
+        _remove_var_type(var_to_type, type_to_vars, name)
+        return
+    var_to_type[name] = typ
+    bucket = type_to_vars.setdefault(typ, [])
+    if name not in bucket:
+        bucket.append(name)
+
+
+def _remove_var_type(
+    var_to_type: dict[str, str],
+    type_to_vars: dict[str, list[str]],
+    name: str,
+) -> None:
+    old_typ = var_to_type.pop(name, None)
+    if old_typ is None:
+        return
+    bucket = type_to_vars.get(old_typ)
+    if bucket is not None:
+        type_to_vars[old_typ] = [v for v in bucket if v != name]
+        if not type_to_vars[old_typ]:
+            del type_to_vars[old_typ]
+
+
+def _infer_assign_name_type(node: astroid_nodes.AssignName) -> str | None:
+    """Infer type of an assignment target from itself or its RHS."""
+    typ = _infer_node_type(node)
+    if typ is not None:
+        return typ
+    parent = node.parent
+    if isinstance(parent, astroid_nodes.Assign):
+        return _infer_node_type(parent.value)
+    return None
+
+
+def _infer_return_type(
+    func: astroid_nodes.FunctionDef,
+    var_to_type: dict[str, str] | None = None,
+) -> str | None:
+    return_types: list[str] = []
+    for ret in func.nodes_of_class(astroid_nodes.Return):
+        if ret.value is None:
+            continue
+        typ = _infer_node_type(ret.value)
+        if typ is None and var_to_type and isinstance(ret.value, astroid_nodes.Name):
+            typ = var_to_type.get(ret.value.name)
+        if typ is not None:
+            return_types.append(typ)
+    if not return_types:
+        return None
+    unique = set(return_types)
+    if len(unique) == 1:
+        return return_types[0]
+    return None
+
+
+def _build_type_maps(
+    source_code: str, entry_point: str,
+) -> tuple[dict[TypeCoord, str], dict[str, list[str]], dict[str, str]]:
+    """Build coordinate and variable-type lookup tables via astroid inference.
+
+    Returns:
+        coord_to_type: maps (lineno, col_offset) -> primitive type string
+        type_to_vars: maps type string -> sorted list of in-scope variable names
+        var_to_type: maps variable name -> primitive type string
+    """
+    coord_to_type: dict[TypeCoord, str] = {}
+    type_to_vars: dict[str, list[str]] = {}
+    var_to_type: dict[str, str] = {}
+
+    try:
+        module = astroid.parse(source_code)
+    except Exception:
+        return coord_to_type, type_to_vars, var_to_type
+
+    func: astroid_nodes.FunctionDef | None = None
+    for node in module.body:
+        if isinstance(node, astroid_nodes.FunctionDef) and node.name == entry_point:
+            func = node
+            break
+    if func is None:
+        return coord_to_type, type_to_vars, var_to_type
+
+    for arg in func.args.arguments:
+        typ = _infer_arg_type(arg)
+        if typ is None:
+            continue
+        coord = _node_coord(arg)
+        if coord is not None:
+            coord_to_type[coord] = typ
+        _register_var_type(var_to_type, type_to_vars, arg.name, typ)
+
+    target_classes = (astroid_nodes.Name, astroid_nodes.AssignName, astroid_nodes.Call, astroid_nodes.Const)
+    for node in func.nodes_of_class(target_classes):
+        if isinstance(node, astroid_nodes.AssignName):
+            typ = _infer_assign_name_type(node)
+        else:
+            typ = _infer_node_type(node)
+        if typ is None:
+            continue
+        coord = _node_coord(node)
+        if coord is not None:
+            coord_to_type[coord] = typ
+        if isinstance(node, astroid_nodes.AssignName):
+            _register_var_type(var_to_type, type_to_vars, node.name, typ)
+
+    for node in func.nodes_of_class(astroid_nodes.Name):
+        coord = _node_coord(node)
+        if coord is None or coord in coord_to_type:
+            continue
+        typ = var_to_type.get(node.name)
+        if typ is not None:
+            coord_to_type[coord] = typ
+
+    return_type = _infer_return_type(func, var_to_type)
+    if return_type is not None:
+        coord_to_type[_RETURN_COORD] = return_type
+
+    for typ in type_to_vars:
+        type_to_vars[typ].sort()
+
+    return coord_to_type, type_to_vars, var_to_type
+
+
+def _ast_coord(node: ast.AST) -> Coord:
+    return (node.lineno, node.col_offset)
+
+
+def _call_target_ids(body: list[ast.stmt]) -> set[int]:
+    """AST node ids for Name nodes used as the callable in a Call."""
+    return {
+        id(node.func)
+        for stmt in body
+        for node in ast.walk(stmt)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+
+
+def _is_user_variable(name: str, in_scope: set[str]) -> bool:
+    """True when name is a local/parameter variable, not a builtin or global."""
+    return name in in_scope
+
+
+def _operand_primitive_type(
+    operand: ast.AST,
+    coord_to_type: dict[TypeCoord, str],
+    var_to_type: dict[str, str] | None = None,
+) -> str | None:
+    typ = coord_to_type.get(_ast_coord(operand))
+    if typ is None and var_to_type and isinstance(operand, ast.Name):
+        typ = var_to_type.get(operand.id)
+    return typ
+
+
+def _binop_operands_type_ok(
+    node: ast.BinOp,
+    coord_to_type: dict[TypeCoord, str],
+    var_to_type: dict[str, str] | None = None,
+) -> bool:
+    """True when both BinOp operands are inferable and not sequence types."""
+    left_type = _operand_primitive_type(node.left, coord_to_type, var_to_type)
+    right_type = _operand_primitive_type(node.right, coord_to_type, var_to_type)
+    if left_type is None or right_type is None:
+        return False
+    if left_type in _SEQUENCE_TYPES or right_type in _SEQUENCE_TYPES:
+        return False
+    return True
+
+
+def _constant_primitive_type(val: Any) -> str | None:
+    if val is None:
+        return "NoneType"
+    if type(val) is bool:
+        return "bool"
+    if type(val) is int:
+        return "int"
+    if type(val) is float:
+        return "float"
+    if type(val) is str:
+        return "str"
+    return None
+
+
 # ── Operator base ─────────────────────────────────────────
 
 class MutationOperator:
     name: str = ""
     code: str = ""
 
-    def enumerate_mutations(self, tree: ast.Module, entry_point: str) -> list[Mutation]:
+    def enumerate_mutations(
+        self, tree: ast.Module, entry_point: str, source_code: str,
+    ) -> list[Mutation]:
         raise NotImplementedError
 
 
@@ -234,25 +540,15 @@ class AOR(MutationOperator):
     name = "ArithmeticOperatorReplacement"
     code = "AOR"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
+        coord_to_type, _, var_to_type = _build_type_maps(source_code, entry_point)
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.BinOp) and type(node.op) in _ARITH_OPS:
-                # Skip operator replacement for sequence/string repetition
-                # patterns like [1,2] * 2 or "a" * 3 as these are not
-                # numeric multiplications and changing the operator would be
-                # semantically incorrect.
-                if isinstance(node.op, ast.Mult):
-                    left_seq = isinstance(node.left, (ast.List, ast.Tuple, ast.Set))
-                    right_seq = isinstance(node.right, (ast.List, ast.Tuple, ast.Set))
-                    left_str = isinstance(node.left, ast.Constant) and isinstance(node.left.value, str)
-                    right_str = isinstance(node.right, ast.Constant) and isinstance(node.right.value, str)
-                    left_is_int = isinstance(node.left, ast.Constant) and isinstance(node.left.value, int)
-                    right_is_int = isinstance(node.right, ast.Constant) and isinstance(node.right.value, int)
-                    if ((left_seq or left_str) and right_is_int) or ((right_seq or right_str) and left_is_int):
-                        continue
+                if not _binop_operands_type_ok(node, coord_to_type, var_to_type):
+                    continue
                 orig_type = type(node.op)
                 repl_idx = 0
                 any_produced = False
@@ -285,55 +581,15 @@ class AOD(MutationOperator):
     name = "ArithmeticOperatorDeletion"
     code = "AOD"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
+        coord_to_type, _, var_to_type = _build_type_maps(source_code, entry_point)
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.BinOp) and type(node.op) in _ARITH_OPS:
-                # Special-case multiplication used for sequence/string repetition
-                # (e.g. [1,2] * 2, "a" * 3): if detected, only keep the
-                # non-int operand (the sequence) as the deletion replacement.
-                if isinstance(node.op, ast.Mult):
-                    left_seq = isinstance(node.left, (ast.List, ast.Tuple, ast.Set))
-                    right_seq = isinstance(node.right, (ast.List, ast.Tuple, ast.Set))
-                    left_str = isinstance(node.left, ast.Constant) and isinstance(node.left.value, str)
-                    right_str = isinstance(node.right, ast.Constant) and isinstance(node.right.value, str)
-                    left_is_int = isinstance(node.left, ast.Constant) and isinstance(node.left.value, int)
-                    right_is_int = isinstance(node.right, ast.Constant) and isinstance(node.right.value, int)
-
-                    if (left_seq or left_str) and right_is_int:
-                        # keep left (sequence)
-                        new_tree_l = _deep_replace(tree, node, node.left)
-                        mutations.append(Mutation(
-                            operator=self.name, operator_code=self.code,
-                            site_index=site_idx, replacement_index=0,
-                            site=MutationSite(
-                                line=node.lineno, col=node.col_offset,
-                                node_type="BinOp",
-                                original=f"a {_ARITH_OPS[type(node.op)]} b",
-                                replacement="a",
-                            ),
-                            tree=new_tree_l,
-                        ))
-                        site_idx += 1
-                        continue
-                    if (right_seq or right_str) and left_is_int:
-                        # keep right (sequence)
-                        new_tree_r = _deep_replace(tree, node, node.right)
-                        mutations.append(Mutation(
-                            operator=self.name, operator_code=self.code,
-                            site_index=site_idx, replacement_index=0,
-                            site=MutationSite(
-                                line=node.lineno, col=node.col_offset,
-                                node_type="BinOp",
-                                original=f"a {_ARITH_OPS[type(node.op)]} b",
-                                replacement="b",
-                            ),
-                            tree=new_tree_r,
-                        ))
-                        site_idx += 1
-                        continue
+                if not _binop_operands_type_ok(node, coord_to_type, var_to_type):
+                    continue
 
                 # Default behavior: produce both left- and right- deletion variants
                 new_tree_l = _deep_replace(tree, node, node.left)
@@ -369,15 +625,20 @@ class AOI(MutationOperator):
     name = "ArithmeticOperatorInsertion"
     code = "AOI"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
+        # 1. Fetch the type maps
+        coord_to_type, _, var_to_type = _build_type_maps(source_code, entry_point)
+        
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
+        
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                # Keep this operator conservative: do not mutate names that are
-                # used as call targets, since "sum(coins)" -> "(sum + 1)(coins)"
-                # is not a meaningful arithmetic change.
+                # 2. Check if the type is strictly numeric
+                node_type = coord_to_type.get(_ast_coord(node)) or var_to_type.get(node.id)
+                if node_type not in {"int", "float"}:
+                    continue
                 if any(
                     isinstance(parent, ast.Call) and parent.func is node
                     for stmt in body
@@ -437,7 +698,7 @@ class ROR(MutationOperator):
     name = "RelationalOperatorReplacement"
     code = "ROR"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -482,7 +743,7 @@ class COR(MutationOperator):
     name = "ConditionalOperatorReplacement"
     code = "COR"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -519,7 +780,7 @@ class COD(MutationOperator):
     name = "ConditionalOperatorDeletion"
     code = "COD"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -548,47 +809,68 @@ class COD(MutationOperator):
 
 
 # ── Unary ─────────────────────────────────────────────────
-
 class UOI(MutationOperator):
-    """Insert a unary operator: -x or not x."""
+    """Insert a unary operator: -x or not x.
+    
+    The numeric negation (-x) is restricted strictly to variables inferred
+    as an 'int' or 'float' type.
+    """
     name = "UnaryOperatorInsertion"
     code = "UOI"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
+        # Build type maps using the existing astroid inference helper
+        coord_to_type, _, var_to_type = _build_type_maps(source_code, entry_point)
+        
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
+
+        # PRE-COMPUTE: Find all nodes that are being called as functions
+        # This prevents O(N^2) tree walking inside the main loop.
+        call_target_ids = {
+            id(node.func) 
+            for stmt in body 
+            for node in ast.walk(stmt) 
+            if isinstance(node, ast.Call)
+        }
+
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                # Keep unary insertion conservative: do not rewrite names that
-                # are being used as call targets, since "sum(x)" -> "(not sum)(x)"
-                # or "(-sum)(x)" is not a meaningful mutation.
-                if any(
-                    isinstance(parent, ast.Call) and parent.func is node
-                    for stmt in body
-                    for parent in ast.walk(stmt)
-                ):
+                # O(1) lookup: skip if this exact node is a call target
+                if id(node) in call_target_ids:
                     continue
-                # -x
-                neg = ast.UnaryOp(op=ast.USub(), operand=copy.deepcopy(node))
-                new_tree_neg = _deep_replace(tree, node, neg)
-                mutations.append(Mutation(
-                    operator=self.name, operator_code=self.code,
-                    site_index=site_idx, replacement_index=0,
-                    site=MutationSite(
-                        line=node.lineno, col=node.col_offset,
-                        node_type="Name",
-                        original=node.id,
-                        replacement=f"-{node.id}",
-                    ),
-                    tree=new_tree_neg,
-                ))
-                # not x
+                
+                repl_idx = 0
+                any_produced = False
+                
+                # Fetch inferred type of the variable node
+                node_type = coord_to_type.get(_ast_coord(node)) or var_to_type.get(node.id)
+                
+                # ── Case 1: -x (Numeric types only) ─────────────────
+                if node_type in {"int", "float"}:
+                    neg = ast.UnaryOp(op=ast.USub(), operand=copy.deepcopy(node))
+                    new_tree_neg = _deep_replace(tree, node, neg)
+                    mutations.append(Mutation(
+                        operator=self.name, operator_code=self.code,
+                        site_index=site_idx, replacement_index=repl_idx,
+                        site=MutationSite(
+                            line=node.lineno, col=node.col_offset,
+                            node_type="Name",
+                            original=node.id,
+                            replacement=f"-{node.id}",
+                        ),
+                        tree=new_tree_neg,
+                    ))
+                    repl_idx += 1
+                    any_produced = True
+                
+                # ── Case 2: not x (Universal fallback) ───────────────
                 not_node = ast.UnaryOp(op=ast.Not(), operand=copy.deepcopy(node))
                 new_tree_not = _deep_replace(tree, node, not_node)
                 mutations.append(Mutation(
                     operator=self.name, operator_code=self.code,
-                    site_index=site_idx, replacement_index=1,
+                    site_index=site_idx, replacement_index=repl_idx,
                     site=MutationSite(
                         line=node.lineno, col=node.col_offset,
                         node_type="Name",
@@ -597,16 +879,20 @@ class UOI(MutationOperator):
                     ),
                     tree=new_tree_not,
                 ))
-                site_idx += 1
+                repl_idx += 1
+                any_produced = True
+                
+                if any_produced:
+                    site_idx += 1
+                    
         return mutations
-
-
+        
 class UOD(MutationOperator):
     """Remove a unary operator: -x -> x, not x -> x."""
     name = "UnaryOperatorDeletion"
     code = "UOD"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -636,12 +922,20 @@ class CR(MutationOperator):
     name = "ConstantReplacement"
     code = "CR"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
+        coord_to_type, _, _ = _build_type_maps(source_code, entry_point)
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if not isinstance(node, ast.Constant):
+                continue
+            coord = _ast_coord(node)
+            inferred_type = coord_to_type.get(coord)
+            if inferred_type is None:
+                continue
+            literal_type = _constant_primitive_type(node.value)
+            if literal_type is None or literal_type != inferred_type:
                 continue
             replacements = self._alternatives(node.value)
             if not replacements:
@@ -665,9 +959,9 @@ class CR(MutationOperator):
 
     @staticmethod
     def _alternatives(val):
-        if isinstance(val, bool):
+        if type(val) is bool:
             return [not val]
-        if isinstance(val, int):
+        if type(val) is int:
             alts = []
             if val != 0:
                 alts.append(0)
@@ -697,14 +991,26 @@ class VVR(MutationOperator):
     name = "VarToVarReplacement"
     code = "VVR"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
+        coord_to_type, type_to_vars, var_to_type = _build_type_maps(source_code, entry_point)
         func, body = _get_function_body(tree, entry_point)
-        in_scope = _in_scope_variables(func)
+        in_scope = set(_in_scope_variables(func))
+        call_targets = _call_target_ids(body)
         mutations = []
         site_idx = 0
         for node in _body_nodes_preorder(body):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in in_scope:
-                others = [v for v in in_scope if v != node.id]
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                if not _is_user_variable(node.id, in_scope):
+                    continue
+                if id(node) in call_targets:
+                    continue
+                var_type = coord_to_type.get(_ast_coord(node)) or var_to_type.get(node.id)
+                if var_type is None:
+                    continue
+                others = [
+                    v for v in type_to_vars.get(var_type, [])
+                    if v != node.id and _is_user_variable(v, in_scope)
+                ]
                 if not others:
                     continue
                 for repl_idx, other in enumerate(others):
@@ -732,13 +1038,29 @@ class VCR(MutationOperator):
 
     _CONSTANTS = [0, 1, None, True, False, ""]
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
+        coord_to_type, _, var_to_type = _build_type_maps(source_code, entry_point)
         func, body = _get_function_body(tree, entry_point)
+        in_scope = set(_in_scope_variables(func))
+        call_targets = _call_target_ids(body)
         mutations = []
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                for repl_idx, val in enumerate(self._CONSTANTS):
+                if not _is_user_variable(node.id, in_scope):
+                    continue
+                if id(node) in call_targets:
+                    continue
+                var_type = coord_to_type.get(_ast_coord(node)) or var_to_type.get(node.id)
+                if var_type is None:
+                    continue
+                matching_constants = [
+                    val for val in self._CONSTANTS
+                    if _constant_primitive_type(val) == var_type
+                ]
+                if not matching_constants:
+                    continue
+                for repl_idx, val in enumerate(matching_constants):
                     new_node = ast.Constant(value=val)
                     new_tree = _deep_replace(tree, node, new_node)
                     mutations.append(Mutation(
@@ -761,16 +1083,24 @@ class CVR(MutationOperator):
     name = "ConsToVarReplacement"
     code = "CVR"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
+        coord_to_type, type_to_vars, _ = _build_type_maps(source_code, entry_point)
         func, body = _get_function_body(tree, entry_point)
-        in_scope = _in_scope_variables(func)
-        if not in_scope:
-            return []
+        in_scope = set(_in_scope_variables(func))
         mutations = []
         site_idx = 0
         for node in _body_nodes_preorder(body):
-            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float, str, bool)):
-                for repl_idx, var in enumerate(in_scope):
+            if isinstance(node, ast.Constant):
+                const_type = coord_to_type.get(_ast_coord(node))
+                if const_type is None:
+                    continue
+                candidates = [
+                    v for v in type_to_vars.get(const_type, [])
+                    if _is_user_variable(v, in_scope)
+                ]
+                if not candidates:
+                    continue
+                for repl_idx, var in enumerate(candidates):
                     new_node = ast.Name(id=var, ctx=ast.Load())
                     new_tree = _deep_replace(tree, node, new_node)
                     mutations.append(Mutation(
@@ -795,7 +1125,7 @@ class SD(MutationOperator):
     name = "StatementDeletion"
     code = "SD"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         full_body = func.body
         mutations = []
@@ -823,15 +1153,28 @@ class RVM(MutationOperator):
     name = "ReturnValueMutation"
     code = "RVM"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
+        coord_to_type, _, _ = _build_type_maps(source_code, entry_point)
+        return_type = coord_to_type.get(_RETURN_COORD)
+        if return_type not in {"int", "float", "bool"}:
+            return []
+
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.Return) and node.value is not None:
-                # Negate: return x -> return not x
-                negated = ast.UnaryOp(op=ast.Not(), operand=copy.deepcopy(node.value))
-                new_ret = ast.Return(value=negated)
+                if return_type in {"int", "float"}:
+                    replacement = ast.UnaryOp(
+                        op=ast.USub(), operand=copy.deepcopy(node.value),
+                    )
+                    replacement_label = "return -<expr>"
+                else:
+                    replacement = ast.UnaryOp(
+                        op=ast.Not(), operand=copy.deepcopy(node.value),
+                    )
+                    replacement_label = "return not <expr>"
+                new_ret = ast.Return(value=replacement)
                 new_tree = _deep_replace(tree, node, new_ret)
                 mutations.append(Mutation(
                     operator=self.name, operator_code=self.code,
@@ -840,7 +1183,7 @@ class RVM(MutationOperator):
                         line=node.lineno, col=node.col_offset,
                         node_type="Return",
                         original="return <expr>",
-                        replacement="return not <expr>",
+                        replacement=replacement_label,
                     ),
                     tree=new_tree,
                 ))
@@ -853,7 +1196,11 @@ class TR(MutationOperator):
     name = "TrueReturn"
     code = "TR"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
+        coord_to_type, _, _ = _build_type_maps(source_code, entry_point)
+        if coord_to_type.get(_RETURN_COORD) != "bool":
+            return []
+
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -881,7 +1228,11 @@ class FR(MutationOperator):
     name = "FalseReturn"
     code = "FR"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
+        coord_to_type, _, _ = _build_type_maps(source_code, entry_point)
+        if coord_to_type.get(_RETURN_COORD) != "bool":
+            return []
+
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -911,7 +1262,7 @@ class RC(MutationOperator):
     name = "RemoveConditional"
     code = "RC"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -964,7 +1315,7 @@ class NEG(MutationOperator):
     name = "Negation"
     code = "NEG"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -994,7 +1345,7 @@ class FCD(MutationOperator):
     name = "FunctionCallDeletion"
     code = "FCD"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         full_body = func.body
         mutations = []
@@ -1029,7 +1380,7 @@ class CRN(MutationOperator):
     name = "ConstructorReplacementNone"
     code = "CRN"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -1073,7 +1424,7 @@ class BOR(MutationOperator):
     name = "BitwiseOperatorReplacement"
     code = "BOR"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -1116,7 +1467,7 @@ class BSOR(MutationOperator):
     name = "BitshiftOperatorReplacement"
     code = "BSOR"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
@@ -1146,7 +1497,7 @@ class BSOD(MutationOperator):
     name = "BitshiftOperatorDeletion"
     code = "BSOD"
 
-    def enumerate_mutations(self, tree, entry_point):
+    def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
         mutations = []
         site_idx = 0
