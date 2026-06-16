@@ -119,7 +119,7 @@ def foo(x):
     muts = _sd(source)
     
     # Should delete the whole `if` block (index 0) and the `return 2` (index 1)
-    assert len(muts) == 2
+    assert len(muts) == 3
     
     # Mutation 0: removes the `if` block
     code_0 = ast.unparse(muts[0].tree)
@@ -127,13 +127,20 @@ def foo(x):
     assert "return 1" not in code_0
     assert "return 2" in code_0
     assert muts[0].site.node_type == "If"
-    
-    # Mutation 1: removes `return 2`
+
+    # Mutation 1: removes the inner `return 1`
     code_1 = ast.unparse(muts[1].tree)
     assert "if x > 0" in code_1
-    assert "return 1" in code_1
-    assert "return 2" not in code_1
+    assert "pass" in code_1
+    assert "return 2" in code_1
     assert muts[1].site.node_type == "Return"
+
+    # Mutation 2: removes the outer `return 2`
+    code_2 = ast.unparse(muts[2].tree)
+    assert "if x > 0" in code_2
+    assert "return 1" in code_2
+    assert "return 2" not in code_2
+    assert muts[2].site.node_type == "Return"
 
 
 def test_sd_function_call_statements():
