@@ -2,16 +2,22 @@ import ast
 import astroid
 
 from src.phase1.operators import (
-    _resolve_inferred_type,
-    _infer_node_type,
-    _infer_arg_type,
-    _infer_return_type,
+    _RETURN_COORD,
+    _annotation_for_arg,
+    _ast_coord,
+    _binop_operands_type_ok,
     _build_type_maps,
+    _call_target_ids,
+    _infer_arg_type,
+    _infer_assign_name_type,
+    _infer_node_type,
+    _infer_return_type,
+    _is_user_variable,
+    _node_coord,
+    _operand_primitive_type,
     _register_var_type,
     _remove_var_type,
-    _binop_operands_type_ok,
-    _call_target_ids,
-    _RETURN_COORD,
+    _resolve_inferred_type,
 )
 
 
@@ -89,6 +95,27 @@ def foo(x):
     assert _infer_arg_type(arg) is None
 
 
+def test_annotation_for_arg_handles_positional_and_kwonly():
+    module = astroid.parse(
+        """
+def foo(x: int, *, y: str):
+    return x
+"""
+    )
+
+    func = module.body[0]
+    x_arg = func.args.arguments[0]
+    y_arg = func.args.kwonlyargs[0]
+
+    x_ann = _annotation_for_arg(x_arg)
+    y_ann = _annotation_for_arg(y_arg)
+
+    assert isinstance(x_ann, astroid.nodes.Name)
+    assert x_ann.name == "int"
+    assert isinstance(y_ann, astroid.nodes.Name)
+    assert y_ann.name == "str"
+
+
 def test_infer_return_type_single_type():
     module = astroid.parse(
         """
@@ -159,6 +186,41 @@ def test_remove_var_type():
 
     assert var_to_type == {}
     assert type_to_vars == {}
+
+
+def test_node_coord_and_ast_coord_align_with_node_positions():
+    module = astroid.parse(
+        """
+x = 1
+"""
+    )
+    assign = module.body[0]
+    target = assign.targets[0]
+
+    coord = _node_coord(target)
+    assert coord == (target.lineno, target.col_offset)
+
+    bare_const = astroid.nodes.Const(1)
+    assert _node_coord(bare_const) is None
+
+    py_tree = ast.parse("y = 2")
+    const = next(
+        node for node in ast.walk(py_tree) if isinstance(node, ast.Constant)
+    )
+    assert _ast_coord(const) == (const.lineno, const.col_offset)
+
+
+def test_infer_assign_name_type_uses_rhs_when_needed():
+    module = astroid.parse(
+        """
+x = 1
+"""
+    )
+    assign = module.body[0]
+    target = assign.targets[0]
+
+    inferred = _infer_assign_name_type(target)
+    assert inferred == "int"
 
 
 def test_build_type_maps_basic():
@@ -275,3 +337,38 @@ def task_func(nums):
     )
 
     assert id(call.func) in ids
+
+
+def test_is_user_variable_and_operand_primitive_type():
+    source = """
+def task_func(a: int):
+    b = a + 1
+    return b
+"""
+
+    tree = ast.parse(source)
+    func = tree.body[0]
+    binop = next(
+        node
+        for node in ast.walk(func)
+        if isinstance(node, ast.BinOp)
+    )
+
+    coord_to_type, _, var_to_type = _build_type_maps(source, "task_func")
+
+    left_type = _operand_primitive_type(binop.left, coord_to_type, var_to_type)
+    right_type = _operand_primitive_type(binop.right, coord_to_type, var_to_type)
+
+    assert left_type == "int"
+    assert right_type == "int"
+
+    missing = _operand_primitive_type(
+        ast.parse("z").body[0].value,
+        {},
+        {},
+    )
+    assert missing is None
+
+    in_scope = {"a", "b"}
+    assert _is_user_variable("a", in_scope)
+    assert not _is_user_variable("len", in_scope)

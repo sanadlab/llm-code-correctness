@@ -1,6 +1,6 @@
 import ast
 
-from src.phase1.operators import UOI
+from src.phase1.operators import UOI, UOD
 
 
 def _parse(src: str):
@@ -153,7 +153,8 @@ def foo(numbers):
     muts = UOI().enumerate_mutations(tree, "foo", source)
 
     for m in muts:
-        assert m.site.replacement != "not numbers"
+        mutated_code = ast.unparse(m.tree)
+        assert "(not numbers).empty()" not in mutated_code
 
 
 def test_uoi_variable_assigned_slice_can_be_mutated():
@@ -233,3 +234,20 @@ def foo(x):
 
     assert "not x" in replacements
     assert "-x" not in replacements
+
+
+def test_uod_deletes_various_unary_operators():
+    source = """
+def foo(x):
+    return -x, not x, +x, ~x
+"""
+    tree = _parse(source)
+
+    muts = UOD().enumerate_mutations(tree, "foo", source)
+
+    assert len(muts) == 4
+    originals = {m.site.original for m in muts}
+    replacements = {m.site.replacement for m in muts}
+
+    assert originals == {"-", "not", "+", "~"}
+    assert replacements == {"<removed>"}

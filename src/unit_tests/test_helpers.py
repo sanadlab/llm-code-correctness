@@ -4,6 +4,7 @@ import pytest
 
 from src.phase1.operators import (
     _constant_primitive_type,
+    _constant_in_assignment_rhs,
     _get_function_body,
     _in_scope_variables,
     _node_in_body,
@@ -107,6 +108,32 @@ def foo():
     )
 
     assert _stmt_index_of(constant, body) == 1
+
+
+def test_constant_in_assignment_rhs_detects_initializer_literal():
+    tree = ast.parse(
+        """
+def foo():
+    x = 1
+    return 1
+"""
+    )
+
+    _, body = _get_function_body(tree, "foo")
+
+    assign_const = next(
+        node
+        for node in ast.walk(body[0])
+        if isinstance(node, ast.Constant) and node.value == 1
+    )
+    return_const = next(
+        node
+        for node in ast.walk(body[1])
+        if isinstance(node, ast.Constant) and node.value == 1
+    )
+
+    assert _constant_in_assignment_rhs(assign_const, body)
+    assert not _constant_in_assignment_rhs(return_const, body)
 
 
 @pytest.mark.parametrize(

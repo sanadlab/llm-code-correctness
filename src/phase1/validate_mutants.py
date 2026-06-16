@@ -181,6 +181,21 @@ def validate_mutants(cfg: Phase1Config) -> None:
     n_timeout = sum(1 for v in validated if v["status"] == "timeout")
     print(f"Validated {len(validated)} mutants: {n_fail} killed, {n_pass} equivalent, {n_timeout} timeout")
     print(f"  → {output_path}")
+    if os.environ.get("VALIDATE_SHOW_REASON") == "1" and n_fail:
+        print("\nFailed mutants (for debugging):")
+        for row in validated:
+            if row.get("status") != "fail":
+                continue
+            site = row.get("site", {}) or {}
+            tests = sorted((row.get("details") or {}).keys())
+            print(
+                f"  - {row.get('mutant_id')} "
+                f"[task={row.get('task_id')}, op={row.get('operator_code')}] "
+                f"at line {site.get('line')} col {site.get('col')}: "
+                f"{site.get('original')} -> {site.get('replacement') or '<unknown>'}"
+            )
+            if tests:
+                print(f"      failing tests: {', '.join(tests)}")
 
 
 def _validate_mutant_batch(
