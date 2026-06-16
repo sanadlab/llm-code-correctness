@@ -1,4 +1,28 @@
 #!/usr/bin/env bash
+# =============================================================================
+# run_pairdiff_all_models.sh
+# =============================================================================
+# Batch pair-diff cosine analysis for multiple models on the experiment-selected
+# layer (one layer per fold from results.json).
+#
+# What it runs
+#   plot_pairdiff_reading_cosine.py per model × fold with --layers selected
+#   --overlay, then one cross-fold overlay (--overlay-folds) per model.
+#
+# Outputs
+#   outputs/phase2_task2_cosine/selected/<model>/.../overlay_layers_cosine.png
+#   outputs/phase2_task2_cosine/selected/<model>/.../overlay_folds/
+#
+# Prerequisites
+#   Hidden-state bundles, direction vectors, and results.json for each fold.
+#
+# Usage
+#   source ../envs/llm-code-correctness/bin/activate
+#   ./scripts/analysis/run_pairdiff_all_models.sh
+#
+# Environment variables
+#   HIDDEN_STATES_ROOT  path to hidden states (default: ../hidden_states_sohaila)
+# =============================================================================
 set -euo pipefail
 
 # Run pairdiff cosine analysis for ALL models, plotting all layers per model.

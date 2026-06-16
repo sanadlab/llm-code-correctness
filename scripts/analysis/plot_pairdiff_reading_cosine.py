@@ -1,5 +1,53 @@
 #!/usr/bin/env python3
-"""Visualize cosine similarity between task pair differences and learned reading direction."""
+"""Core pair-diff cosine analysis: hidden states vs. learned reading direction.
+
+Purpose
+-------
+For each task, forms all correct×incorrect sample pairs and measures how well the
+hidden-state difference (h_correct - h_incorrect) aligns with the per-layer reading
+direction learned from validation data.
+
+Inputs
+------
+- Hidden-state bundles (``bundle.pt``) under ``--hidden-states-root``
+- Reading directions (``direction.pt``) under ``--vectors-root``
+- Layer-selection metadata (``results.json``) under ``--results-root``
+
+Outputs
+-------
+- ``cosine_similarities.csv``: one row per pair/layer with cosine similarity
+- ``summary.json``: per-layer mean/median/std of cosine similarities
+- Optional plots:
+  - per-layer histograms (``layer_*_cosine_hist.png``)
+  - multi-layer overlay (``overlay_layers_cosine.png``)
+  - top-percentile layer density overlay (``top_*_percentile_layers_cosine_overlay_fold_*.png``)
+  - validation/test overlay with dashed val + solid test lines
+    (``top_*_percentile_layers_val_test_cosine_overlay_fold_*.png``)
+  - cross-fold overlay of the selected layer (``overlay_folds/``)
+
+Key CLI flags
+-------------
+- ``--layers``: ``selected``, ``all``, or comma-separated indices
+- ``--top-percentile``: plot layers at/above a val pairwise-acc percentile
+- ``--top-percentile-val-test-overlay``: overlay validate (dashed) and test (solid)
+- ``--overlay`` / ``--overlay-folds``: combine layers or folds on one figure
+
+Related scripts
+---------------
+- ``run_pairdiff_all_models.sh``: batch run for multiple models (selected layer)
+- ``run_pairdiff_top_percentile_graphs.sh``: top-percentile test overlays per fold
+- ``run_pairdiff_top_percentile_val_test_graphs.sh``: val/test top-percentile overlays
+- ``pairdiff_cosine_outperformance_stats.py``: stats on layers beating selected layer
+
+Usage
+-----
+::
+
+    python scripts/analysis/plot_pairdiff_reading_cosine.py \\
+        --model Qwen/Qwen2.5-Coder-7B-Instruct \\
+        --benchmark bigcodebench --split test --fold 0 \\
+        --layers all --top-percentile --percentile 90
+"""
 
 from __future__ import annotations
 
@@ -10,7 +58,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -68,6 +116,7 @@ class Args:
     folds: Optional[List[int]] = None
     overlay_folds: bool = False
     top_percentile: bool = False
+    top_percentile_val_test_overlay: bool = False
     percentile: float = 90.0
 
 
@@ -124,6 +173,11 @@ def parse_args() -> Args:
         help="Plot the top percentile layers by test pairwise accuracy for the fold.",
     )
     parser.add_argument(
+        "--top-percentile-val-test-overlay",
+        action="store_true",
+        help="Overlay top-percentile layer cosine densities for validation (dashed) and test (solid).",
+    )
+    parser.add_argument(
         "--percentile",
         type=float,
         default=90.0,
@@ -154,6 +208,7 @@ def parse_args() -> Args:
         folds=args.folds,
         overlay_folds=args.overlay_folds,
         top_percentile=args.top_percentile,
+        top_percentile_val_test_overlay=args.top_percentile_val_test_overlay,
         percentile=args.percentile,
     )
 
@@ -254,21 +309,35 @@ def load_fold_result_metrics(args: Args, fold: int) -> Dict[str, Dict[int, Dict[
     }
 
 
+def _smooth_density(values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    hist, bin_edges = np.histogram(values, bins=120, range=(-1.0, 1.0), density=True)
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    try:
+        from scipy.ndimage import gaussian_filter1d
+
+        smooth = gaussian_filter1d(hist, sigma=1.5)
+    except Exception:
+        smooth = hist
+    return bin_centers, smooth
+
+
 def select_top_percentile_layers(
     val_layer_metrics: Dict[int, Dict[str, float]],
     percentile: float,
+    selected_layer: Optional[int] = None,
 ) -> List[int]:
-    
     values = [metrics.get("pairwise_acc") for metrics in val_layer_metrics.values()]
     values = [value for value in values if value is not None]
     if not values:
         raise ValueError("No pairwise_acc values available for percentile selection.")
-    threshold = float(np.percentile(np.array(values, dtype=np.float32), percentile))
+    threshold = float(np.percentile(np.array(values, dtype=np.float64), percentile))
     selected = [
         layer
         for layer, metrics in val_layer_metrics.items()
         if metrics.get("pairwise_acc") is not None and metrics["pairwise_acc"] >= threshold
     ]
+    if selected_layer is not None and selected_layer not in selected:
+        selected.append(selected_layer)
     return sorted(selected, key=lambda layer: (-val_layer_metrics[layer]["pairwise_acc"], layer))
 
 
@@ -277,19 +346,14 @@ def plot_top_percentile_layers(
     entries: List[Dict[str, object]],
     metrics: Dict[str, Dict[int, Dict[str, float]]],
     out_dir: Path,
+    experiment_selected_layer: int,
 ) -> None:
-    
     test_metrics = metrics["test"]
     val_metrics = metrics["val"]
     selected_layers = sorted({int(entry["layer"]) for entry in entries})
     if not selected_layers:
         logger.warning("No layers selected for top percentile plot for fold %s", args.fold)
         return
-
-    best_layer = max(
-        selected_layers,
-        key=lambda layer: val_metrics.get(layer, {}).get("pairwise_acc", 0.0),
-    )
 
     grouped: Dict[int, List[float]] = defaultdict(list)
     for entry in entries:
@@ -302,25 +366,18 @@ def plot_top_percentile_layers(
         values = np.array(grouped[layer], dtype=np.float32)
         if values.size == 0:
             continue
-        hist, bin_edges = np.histogram(values, bins=120, range=(-1.0, 1.0), density=True)
-        bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-        try:
-            from scipy.ndimage import gaussian_filter1d
-
-            smooth = gaussian_filter1d(hist, sigma=1.5)
-        except Exception:
-            smooth = hist
+        bin_centers, smooth = _smooth_density(values)
 
         color = colors[i % len(colors)] if colors else None
-        line_width = 3.0 if layer == best_layer else 1.5
+        line_width = 3.0 if layer == experiment_selected_layer else 1.5
         cosine_sim_mean = float(np.mean(values))
         val_acc = val_metrics.get(layer, {}).get("pairwise_acc", float("nan"))
-        test_acc = test_metrics.get(layer, {}).get("pairwise_acc", float("nan"))
+        test_acc = test_metrics.get(layer, {}).get("one_of_4", float("nan"))
         label_text = (
-            f"layer {layer} ({cosine_sim_mean:.3f} | {val_acc:.3f} | {test_acc:.3f})"
+            f"layer {layer} (Cosine_Sim: {cosine_sim_mean:.3f} | Val_Acc: {val_acc:.4f} | Test_Acc: {test_acc:.4f})"
         )
-        if layer == best_layer:
-            label_text += " <BEST>"
+        if layer == experiment_selected_layer:
+            label_text += " <SELECTED>"
         ax.plot(bin_centers, smooth, label=label_text, color=color, linewidth=line_width)
 
     ax.set_xlim(-1.0, 1.0)
@@ -336,6 +393,90 @@ def plot_top_percentile_layers(
     fig.savefig(fig_path, dpi=200)
     plt.close(fig)
     logger.info("Wrote top-percentile cosine overlay plot to %s", fig_path)
+
+
+def plot_top_percentile_val_test_overlay(
+    args: Args,
+    val_entries: List[Dict[str, object]],
+    test_entries: List[Dict[str, object]],
+    metrics: Dict[str, Dict[int, Dict[str, float]]],
+    out_dir: Path,
+    experiment_selected_layer: int,
+    top_layers: List[int],
+) -> None:
+    test_metrics = metrics["test"]
+    val_metrics = metrics["val"]
+    if not top_layers:
+        logger.warning("No layers selected for val/test top percentile plot for fold %s", args.fold)
+        return
+
+    grouped_val: Dict[int, List[float]] = defaultdict(list)
+    for entry in val_entries:
+        grouped_val[int(entry["layer"])].append(float(entry["cosine_similarity"]))
+    grouped_test: Dict[int, List[float]] = defaultdict(list)
+    for entry in test_entries:
+        grouped_test[int(entry["layer"])].append(float(entry["cosine_similarity"]))
+
+    fig, ax = plt.subplots(figsize=(12, 7))
+    colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    for i, layer in enumerate(top_layers):
+        color = colors[i % len(colors)] if colors else None
+        line_width = 3.0 if layer == experiment_selected_layer else 1.5
+        selected_suffix = " <SELECTED>" if layer == experiment_selected_layer else ""
+        val_acc = val_metrics.get(layer, {}).get("pairwise_acc", float("nan"))
+        test_acc = test_metrics.get(layer, {}).get("one_of_4", float("nan"))
+
+        val_values = np.array(grouped_val.get(layer, []), dtype=np.float32)
+        if val_values.size > 0:
+            bin_centers, smooth = _smooth_density(val_values)
+            val_mean = float(np.mean(val_values))
+            val_label = (
+                f"layer {layer} val (Cosine_Sim: {val_mean:.3f} | Val_Acc: {val_acc:.4f} | Test_Acc: {test_acc:.4f})"
+                f"{selected_suffix}"
+            )
+            ax.plot(
+                bin_centers,
+                smooth,
+                label=val_label,
+                color=color,
+                linewidth=line_width,
+                linestyle="--",
+            )
+
+        test_values = np.array(grouped_test.get(layer, []), dtype=np.float32)
+        if test_values.size > 0:
+            bin_centers, smooth = _smooth_density(test_values)
+            test_mean = float(np.mean(test_values))
+            test_label = (
+                f"layer {layer} test (Cosine_Sim: {test_mean:.3f} | Val_Acc: {val_acc:.4f} | Test_Acc: {test_acc:.4f})"
+                f"{selected_suffix}"
+            )
+            ax.plot(
+                bin_centers,
+                smooth,
+                label=test_label,
+                color=color,
+                linewidth=line_width,
+                linestyle="-",
+            )
+
+    ax.set_xlim(-1.0, 1.0)
+    ax.set_xlabel("Cosine similarity")
+    ax.set_ylabel("Density")
+    ax.axvline(0.0, color="black", linestyle="--", linewidth=1)
+    ax.set_title(
+        f"Top {args.percentile:.0f}th percentile layer cosine similarity "
+        f"(validation dashed, test solid) for fold {args.fold}"
+    )
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig_path = (
+        out_dir
+        / f"top_{int(args.percentile)}th_percentile_layers_val_test_cosine_overlay_fold_{args.fold}.png"
+    )
+    fig.savefig(fig_path, dpi=200)
+    plt.close(fig)
+    logger.info("Wrote top-percentile val/test cosine overlay plot to %s", fig_path)
 
 
 def resolve_layers(args: Args, num_layers: int, direction: Direction) -> List[int]:
@@ -414,6 +555,21 @@ def compute_cosine_entries_for_fold(
     layers: List[int],
 ) -> List[Dict[str, object]]:
     local_args = replace_fold(args, fold)
+    bundle = load_bundle(local_args)
+    if local_args.representation not in bundle.acts:
+        raise KeyError(
+            f"Representation {local_args.representation!r} not found in bundle acts. Available: {list(bundle.acts)}"
+        )
+    direction = load_direction(local_args)
+    return compute_cosine_entries(local_args, bundle, direction, layers)
+
+
+def compute_cosine_entries_for_split(
+    args: Args,
+    split: str,
+    layers: List[int],
+) -> List[Dict[str, object]]:
+    local_args = replace(args, split=split)
     bundle = load_bundle(local_args)
     if local_args.representation not in bundle.acts:
         raise KeyError(
@@ -707,17 +863,50 @@ def main() -> None:
             for fold in sorted(entries_by_fold):
                 local_args = replace_fold(args, fold)
                 metrics = load_fold_result_metrics(local_args, fold)
-                top_layers = select_top_percentile_layers(metrics["val"], local_args.percentile)
+                experiment_selected = load_selected_layer(local_args)
+                top_layers = select_top_percentile_layers(
+                    metrics["val"], local_args.percentile, selected_layer=experiment_selected
+                )
                 if not top_layers:
                     logger.warning("No top-percentile layers found for fold %s", fold)
                     continue
                 bundle = load_bundle(local_args)
                 direction = load_direction(local_args)
                 top_entries = compute_cosine_entries(local_args, bundle, direction, top_layers)
-                plot_top_percentile_layers(local_args, top_entries, metrics, out_dir)
+                plot_top_percentile_layers(
+                    local_args, top_entries, metrics, out_dir, experiment_selected
+                )
         logger.info("Wrote overlay-folds CSV to %s", csv_path)
         logger.info("Wrote overlay-folds summary to %s", summary_path)
         logger.info("Wrote overlay-folds plot to %s", out_dir)
+        return
+
+    out_dir = build_output_dir(args)
+    if (
+        args.top_percentile_val_test_overlay
+        and not args.top_percentile
+        and not args.overlay
+    ):
+        metrics = load_fold_result_metrics(args, args.fold)
+        experiment_selected = load_selected_layer(args)
+        top_layers = select_top_percentile_layers(
+            metrics["val"], args.percentile, selected_layer=experiment_selected
+        )
+        if top_layers:
+            val_entries = compute_cosine_entries_for_split(args, "validate", top_layers)
+            test_entries = compute_cosine_entries_for_split(args, "test", top_layers)
+            plot_top_percentile_val_test_overlay(
+                args,
+                val_entries,
+                test_entries,
+                metrics,
+                out_dir,
+                experiment_selected,
+                top_layers,
+            )
+        else:
+            logger.warning("No top-percentile layers found for val/test overlay on fold %s", args.fold)
+        logger.info("Wrote plots to %s", out_dir)
         return
 
     bundle = load_bundle(args)
@@ -728,24 +917,46 @@ def main() -> None:
     direction = load_direction(args)
     layers = resolve_layers(args, bundle[args.representation].shape[1], direction)
     entries = compute_cosine_entries(args, bundle, direction, layers)
-    out_dir = build_output_dir(args)
     csv_path = out_dir / "cosine_similarities.csv"
     summary_path = out_dir / "summary.json"
     write_csv(entries, csv_path)
     summary_data = summarize(entries, layers)
     with open(summary_path, "w") as f:
         json.dump(summary_data, f, indent=2)
-    plot_layer_histograms(args, entries, out_dir)
+    #plot_layer_histograms(args, entries, out_dir)
     if args.overlay:
         plot_layers_overlay(args, entries, out_dir)
     if args.top_percentile:
         metrics = load_fold_result_metrics(args, args.fold)
-        top_layers = select_top_percentile_layers(metrics["val"], args.percentile)
+        experiment_selected = load_selected_layer(args)
+        top_layers = select_top_percentile_layers(
+            metrics["val"], args.percentile, selected_layer=experiment_selected
+        )
         if top_layers:
             top_entries = compute_cosine_entries(args, bundle, direction, top_layers)
-            plot_top_percentile_layers(args, top_entries, metrics, out_dir)
+            plot_top_percentile_layers(args, top_entries, metrics, out_dir, experiment_selected)
         else:
             logger.warning("No top-percentile layers found for fold %s", args.fold)
+    if args.top_percentile_val_test_overlay:
+        metrics = load_fold_result_metrics(args, args.fold)
+        experiment_selected = load_selected_layer(args)
+        top_layers = select_top_percentile_layers(
+            metrics["val"], args.percentile, selected_layer=experiment_selected
+        )
+        if top_layers:
+            val_entries = compute_cosine_entries_for_split(args, "validate", top_layers)
+            test_entries = compute_cosine_entries_for_split(args, "test", top_layers)
+            plot_top_percentile_val_test_overlay(
+                args,
+                val_entries,
+                test_entries,
+                metrics,
+                out_dir,
+                experiment_selected,
+                top_layers,
+            )
+        else:
+            logger.warning("No top-percentile layers found for val/test overlay on fold %s", args.fold)
     logger.info("Wrote CSV to %s", csv_path)
     logger.info("Wrote summary to %s", summary_path)
     logger.info("Wrote plots to %s", out_dir)

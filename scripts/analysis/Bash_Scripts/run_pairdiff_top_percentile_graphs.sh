@@ -1,4 +1,34 @@
 #!/usr/bin/env bash
+# =============================================================================
+# run_pairdiff_top_percentile_graphs.sh
+# =============================================================================
+# Batch top-percentile cosine density overlays (test split only).
+#
+# What it runs
+#   plot_pairdiff_reading_cosine.py with --top-percentile per model × fold.
+#   Layers are selected by validation pairwise_acc >= 90th percentile.
+#
+# Outputs
+#   outputs/phase2_task2_cosine/top_percentile/
+#     top_90th_percentile_layers_cosine_overlay_fold_{N}.png per fold
+#   Also writes cosine_similarities.csv and summary.json per fold.
+#
+# Prerequisites
+#   Hidden-state bundles, direction vectors, results.json per fold.
+#
+# Usage
+#   source ../envs/llm-code-correctness/bin/activate
+#   ./scripts/analysis/run_pairdiff_top_percentile_graphs.sh
+#
+# Environment variables
+#   HIDDEN_STATES_ROOT  hidden states root (default: ../hidden_states_sohaila)
+#   PYTHON              interpreter (default: python3)
+#   MODELS              space-separated model names (edit script array)
+#   BENCHMARK           benchmark name (default in script: bigcodebench)
+#   SPLIT               data split (default in script: test)
+#   FOLDS               fold list (default: 0–9)
+#   PERCENTILE          val-acc percentile threshold (default: 90)
+# =============================================================================
 set -euo pipefail
 
 # Run pairdiff cosine analysis for top-percentile layers per fold.
@@ -73,5 +103,5 @@ for model in "${MODELS[@]}"; do
 done
 
 echo "=========================================="
-echo "Top-percentile overlay plots generated in: $OUTPUT_DIR"
+echo "New Top-percentile overlay plots generated in: $OUTPUT_DIR"
 echo "=========================================="
