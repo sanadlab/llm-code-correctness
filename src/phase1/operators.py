@@ -133,6 +133,51 @@ def _replace_node(tree: ast.Module, old_node: ast.AST, new_node: ast.AST) -> ast
     # Walk both trees in parallel to find the matching node.
     return _deep_replace(tree, old_node, new_node)
 
+def _deep_delete(tree: ast.Module, target_node: ast.AST) -> ast.Module:
+    """Deep-copy tree and safely remove target_node from its parent list.
+    If the block becomes empty (or only contains a docstring), inserts a pass node."""
+    target_id = id(target_node)
+    new_tree = copy.deepcopy(tree)
+
+    def _delete_in_lockstep(orig: ast.AST, copied: ast.AST):
+        for field_name, orig_value in ast.iter_fields(orig):
+            copied_value = getattr(copied, field_name, None)
+            
+            # Statements always live in lists (e.g., node.body, node.orelse)
+            if isinstance(orig_value, list) and isinstance(copied_value, list):
+                # Find the index of our target node in the original tree
+                target_idx = next((i for i, ov in enumerate(orig_value) if id(ov) == target_id), None)
+                
+                if target_idx is not None:
+                    target_stmt = copied_value[target_idx]
+                    del copied_value[target_idx] # True deletion
+                    
+                    # Check if the block is now effectively empty
+                    has_executable_stmt = False
+                    for stmt in copied_value:
+                        # Ignore docstrings
+                        is_docstring = isinstance(stmt, ast.Expr) and isinstance(getattr(stmt, 'value', None), (ast.Constant, ast.Str))
+                        if not is_docstring:
+                            has_executable_stmt = True
+                            break
+                            
+                    # Inject 'pass' ONLY if the block is now empty to prevent syntax errors
+                    if not has_executable_stmt:
+                        pass_node = ast.Pass()
+                        ast.copy_location(pass_node, target_stmt)
+                        copied_value.append(pass_node)
+                else:
+                    # Not in this list, recurse deeper
+                    for ov, cv in zip(orig_value, copied_value):
+                        if isinstance(ov, ast.AST):
+                            _delete_in_lockstep(ov, cv)
+                            
+            elif isinstance(orig_value, ast.AST) and isinstance(copied_value, ast.AST):
+                _delete_in_lockstep(orig_value, copied_value)
+
+    _delete_in_lockstep(tree, new_tree)
+    ast.fix_missing_locations(new_tree)
+    return new_tree
 
 def _deep_replace(tree: ast.Module, old_node: ast.AST, new_node: ast.AST) -> ast.Module:
     """Deep-copy tree with old_node replaced by new_node (matched by identity)."""
@@ -1178,28 +1223,35 @@ class CVR(MutationOperator):
 # ── Statement deletion ────────────────────────────────────
 
 class SD(MutationOperator):
-    """Delete a non-signature statement from the function body."""
+    """Delete a non-signature statement from the function body recursively."""
     name = "StatementDeletion"
     code = "SD"
 
     def enumerate_mutations(self, tree, entry_point, source_code):
         func, body = _get_function_body(tree, entry_point)
-        full_body = func.body
         mutations = []
-        for site_idx, stmt in enumerate(body):
-            new_tree = _delete_stmt_in_body(tree, func, body, site_idx, full_body)
-            mutations.append(Mutation(
-                operator=self.name, operator_code=self.code,
-                site_index=site_idx, replacement_index=0,
-                site=MutationSite(
-                    line=getattr(stmt, 'lineno', 0),
-                    col=getattr(stmt, 'col_offset', 0),
-                    node_type=type(stmt).__name__,
-                    original=ast.dump(stmt),
-                    replacement="<deleted>",
-                ),
-                tree=new_tree,
-            ))
+        site_idx = 0
+        
+        for node in _body_nodes_preorder(body):
+            if isinstance(node, ast.stmt):
+                
+                # Use the new safe deletion helper
+                new_tree = _deep_delete(tree, node)
+                
+                mutations.append(Mutation(
+                    operator=self.name, operator_code=self.code,
+                    site_index=site_idx, replacement_index=0,
+                    site=MutationSite(
+                        line=getattr(node, 'lineno', 0),
+                        col=getattr(node, 'col_offset', 0),
+                        node_type=type(node).__name__,
+                        original=ast.dump(node),
+                        replacement="<deleted>",
+                    ),
+                    tree=new_tree,
+                ))
+                site_idx += 1
+                
         return mutations
 
 
