@@ -823,7 +823,8 @@ class UOI(MutationOperator):
     """Insert a unary operator: -x or not x.
     
     The numeric negation (-x) is restricted strictly to variables inferred
-    as an 'int' or 'float' type.
+    as an 'int' or 'float' type. The boolean negation (not x) is restricted
+    to 'bool' types or attributes matching common boolean naming conventions.
     """
     name = "UnaryOperatorInsertion"
     code = "UOI"
@@ -844,18 +845,53 @@ class UOI(MutationOperator):
             for node in ast.walk(stmt) 
             if isinstance(node, ast.Call)
         }
+        
+        # PRE-COMPUTE: Find all nodes that are the 'value' of an attribute lookup
+        # This prevents mutating the base object (e.g., 'numbers' in 'numbers.empty')
+        attribute_value_ids = {
+            id(node.value)
+            for stmt in body
+            for node in ast.walk(stmt)
+            if isinstance(node, ast.Attribute)
+        }
+        
+        # PRE-COMPUTE: clauses used as condition tests in if/while statements.
+        # For `if a and b`, treat `a` and `b` as the clause units.
+        condition_clause_ids = set()
+        for stmt in body:
+            for control in ast.walk(stmt):
+                if not isinstance(control, (ast.If, ast.While)):
+                    continue
+                test = control.test
+                if isinstance(test, ast.BoolOp):
+                    for clause in test.values:
+                        condition_clause_ids.add(id(clause))
+                else:
+                    condition_clause_ids.add(id(test))
 
         for node in _body_nodes_preorder(body):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                # O(1) lookup: skip if this exact node is a call target
-                if id(node) in call_target_ids:
+            # Target standalone variable/property loads and condition clauses.
+            is_load_name_or_attr = (
+                isinstance(node, (ast.Name, ast.Attribute))
+                and isinstance(getattr(node, "ctx", None), ast.Load)
+            )
+            is_condition_clause = id(node) in condition_clause_ids
+            if is_load_name_or_attr or is_condition_clause:
+                
+                # O(1) lookup: skip if this exact node is a call target or an attribute base
+                if id(node) in call_target_ids or id(node) in attribute_value_ids:
                     continue
                 
                 repl_idx = 0
                 any_produced = False
                 
-                # Fetch inferred type of the variable node
-                node_type = coord_to_type.get(_ast_coord(node)) or var_to_type.get(node.id)
+                # Safely unparse the node for the mutation report string
+                node_str = ast.unparse(node) if hasattr(ast, "unparse") else (getattr(node, "id", None) or getattr(node, "attr", "<attr>"))
+                
+                # Fetch inferred type from astroid maps
+                node_type = coord_to_type.get(_ast_coord(node))
+                if not node_type and hasattr(node, "id"):
+                    node_type = var_to_type.get(node.id)
                 
                 # ── Case 1: -x (Numeric types only) ─────────────────
                 if node_type in {"int", "float"}:
@@ -866,31 +902,40 @@ class UOI(MutationOperator):
                         site_index=site_idx, replacement_index=repl_idx,
                         site=MutationSite(
                             line=node.lineno, col=node.col_offset,
-                            node_type="Name",
-                            original=node.id,
-                            replacement=f"-{node.id}",
+                            node_type=type(node).__name__,
+                            original=node_str,
+                            replacement=f"-{node_str}",
                         ),
                         tree=new_tree_neg,
                     ))
                     repl_idx += 1
                     any_produced = True
                 
-                # ── Case 2: not x (Universal fallback) ───────────────
-                not_node = ast.UnaryOp(op=ast.Not(), operand=copy.deepcopy(node))
-                new_tree_not = _deep_replace(tree, node, not_node)
-                mutations.append(Mutation(
-                    operator=self.name, operator_code=self.code,
-                    site_index=site_idx, replacement_index=repl_idx,
-                    site=MutationSite(
-                        line=node.lineno, col=node.col_offset,
-                        node_type="Name",
-                        original=node.id,
-                        replacement=f"not {node.id}",
-                    ),
-                    tree=new_tree_not,
-                ))
-                repl_idx += 1
-                any_produced = True
+                # ── Case 2: not x (booleans + condition clauses) ──────────
+                is_boolean = (node_type == "bool")
+                
+                # Heuristic fallback for third-party libraries (e.g., pandas df.empty)
+                # where astroid often yields Uninferable.
+                if not node_type and isinstance(node, ast.Attribute):
+                    if node.attr == "empty" or node.attr.startswith(("is_", "has_", "can_", "should_")):
+                        is_boolean = True
+
+                if is_boolean or is_condition_clause:
+                    not_node = ast.UnaryOp(op=ast.Not(), operand=copy.deepcopy(node))
+                    new_tree_not = _deep_replace(tree, node, not_node)
+                    mutations.append(Mutation(
+                        operator=self.name, operator_code=self.code,
+                        site_index=site_idx, replacement_index=repl_idx,
+                        site=MutationSite(
+                            line=node.lineno, col=node.col_offset,
+                            node_type=type(node).__name__,
+                            original=node_str,
+                            replacement=f"not {node_str}",
+                        ),
+                        tree=new_tree_not,
+                    ))
+                    repl_idx += 1
+                    any_produced = True
                 
                 if any_produced:
                     site_idx += 1
