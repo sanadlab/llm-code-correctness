@@ -344,6 +344,192 @@ python scripts/analysis/pca.py \
 ```
 
 
+## Layer quarter accuracy (cache-only)
+
+For a given model and benchmark, reports how often each **quarter of layers**
+correctly identifies the canonical implementation among four candidates (strict
+1-of-4 ranking: the correct implementation must have the **strictly** highest
+projection onto that fold's per-layer reading vector; ties count as wrong).
+
+Reads only precomputed artifacts:
+- hidden states from `hidden_states/.../bundle.pt` (`sample_ids`, `task_ids`,
+  `labels`, `acts`)
+- per-fold reading vectors from `vectors/.../direction.pt`
+- fold count from `{splits_dir}/manifest.json` when using `--folds all`
+
+**Layer binning:** layer indices are split into four contiguous quarters with
+`np.array_split`. Layer 0 (embedding output) is **excluded** by default; pass
+`--include-embedding` to include it.
+
+Per-fold quarter accuracy pools over all (task, layer) pairs in that quarter.
+The final table also reports macro mean and std across folds (equal fold weight).
+
+Default output:
+- `analysis/layer_quarter_accuracy/<model_safe>/<origin>/<benchmark>/quarter_accuracy.csv`
+- `analysis/layer_quarter_accuracy/<model_safe>/<origin>/<benchmark>/quarter_accuracy.json`
+
+Example (all folds, ICSE26 BigCodeBench):
+
+```bash
+python scripts/analysis/layer_quarter_accuracy.py \
+  --benchmark bigcodebench \
+  --model mistralai/Mistral-7B-Instruct-v0.3 \
+  --folds all \
+  --method mean_diff \
+  --fit-framing function \
+  --representation response_avg \
+  --test-framing neutral
+```
+
+Output table columns: `Q1` … `Q4`. Rows: one per fold, plus `mean-across-folds`
+and `std-across-folds`.
+
+
+## Per-layer strict accuracy plot (cache-only)
+
+For a given benchmark/split-family and a set of models, plots **strict 1-of-4
+test accuracy per layer** (ties wrong) with one line per model. Accuracy at a
+layer is the mean over tasks of whether the canonical implementation scores
+strictly highest when projecting the four implementations onto that layer's
+reading vector.
+
+Reads only precomputed artifacts:
+- hidden states from `hidden_states/.../bundle.pt` (test split)
+- per-fold reading vectors from `vectors/.../direction.pt`
+- fold count from `{splits_dir}/manifest.json` when using `--folds all`
+
+Layer 0 (embedding output) is **excluded** from the plot by default; pass
+`--include-embedding` to include it.
+
+Per-layer accuracy is first computed per fold, then macro-averaged across
+folds for each model (equal fold weight).
+
+Default output:
+- `analysis/layer_accuracy_plot/<origin>/<benchmark>/layer_accuracy.png`
+- `analysis/layer_accuracy_plot/<origin>/<benchmark>/layer_accuracy.json`
+
+Example (all folds, ICSE26 BigCodeBench, two models):
+
+```bash
+python scripts/analysis/layer_accuracy_plot.py \
+  --benchmark bigcodebench \
+  --models mistralai/Mistral-7B-Instruct-v0.3 codellama/CodeLlama-7b-Instruct-hf \
+  --split-family icse26 \
+  --folds all \
+  --method mean_diff \
+  --fit-framing function \
+  --representation response_avg \
+  --test-framing neutral
+```
+
+The JSON dump contains the per-layer means and standard deviations for each
+model, plus per-fold per-layer accuracies.
+
+
+## Residual-PCA correlation (cache-only)
+
+Tests **what the residual-PCA y-axis represents beyond correctness** by
+correlating it against surface-level code metrics, per layer. For each task (a
+set of `k` implementations, expected `k=4`: 1 correct + 3 incorrect) it builds a
+per-task scatter where the x-axis is the fold-specific reading vector
+(correctness direction) and the y-axis is the **top principal component of the
+residuals** (hidden states with the reading-vector component projected out),
+then correlates that y-axis against each surface metric.
+
+Reads only precomputed artifacts (no model inference):
+- hidden states from `hidden_states/.../bundle.pt` (`response_avg` acts; layer 0
+  embedding is **excluded** by default, pass `--include-embedding` to keep it)
+- per-fold reading vectors from `vectors/.../direction.pt`
+- validation-selected layer from `results/.../results.json`
+- implementation source code from the dataset fold JSONL (`fold_<k>/test.jsonl`)
+- fold count from `manifest.json` (via `--folds all`)
+
+**Surface metrics** (computed once per task and cached to `surface_metrics.csv`,
+reused across all layers/folds/models; they do not depend on layer/fold/model):
+- `levenshtein_to_correct` — Levenshtein distance of the implementation source to
+  the task's correct implementation (correct = 0).
+- `ast_dist_to_correct` — tree edit distance over `ast.parse` trees
+  (`--ast-backend {apted,zss}`, default `apted`; correct = 0). Identifier renames
+  count as edits unless `--ast-normalize-identifiers`. Tree edit distance is
+  super-quadratic, so `--ast-max-nodes` (default 300) skips pathologically large
+  ASTs (recorded as `nan`); unparseable implementations are also `nan`.
+- `loc`, `cyclomatic` — source lines of code and McCabe cyclomatic complexity via
+  `radon` (absolute per implementation; cyclomatic = max over functions).
+
+**Stages** (`--stage {metrics,correlate,aggregate,plot,all}`, default `all`).
+Each stage reads/writes on-disk artifacts so it can run standalone:
+`metrics` -> `surface_metrics.csv`; `correlate` -> `correlation_raw.csv`;
+`aggregate` -> `correlation_summary.csv/.json` + `correlation_selected_layer.csv`;
+`plot` -> `layer_curves*.png`.
+
+**Two-level aggregation (per-fold -> macro).** Because the reading vector is per
+fold, a task's `r^2` is only defined relative to a fold's reading vector, so we
+aggregate **within fold first, then across folds**:
+- Level 1 (within fold): for fold *j*, layer L, mean `r^2` over fold *j*'s
+  held-out tasks -> one per-fold-per-layer value.
+- Level 2 (across folds): **macro-average** the per-fold means (equal weight per
+  fold, because tasks recur unequally across folds) -> `macro_mean_r2 +/- macro_std_r2`.
+
+Raw per-task `r^2` is never pooled across folds into a single average. Only `r^2`
+is reported (the sign of the residual component, hence Pearson `r`, is arbitrary).
+The null is the **exact permutation null** (`k!` permutations for `k<=7`, random
+`--n-perms` sampling otherwise).
+
+**Interpretation note (read against 1/3, not 0).** With `k=4` implementations a
+metric with *no* real relationship to the y-axis still averages `r^2 ~= 1/3`
+(analytic n=4 chance level). So the curves must be read against the dashed `1/3`
+chance line, not against `0`: a layer near `0.33` means **no tracking**, and only
+values **clearly above `0.33`** indicate the y-axis tracks that surface metric.
+
+Default output (dataset origin from `--split-family`):
+`analysis/residual_pca_correlation/<model_safe>/<origin>/<benchmark>/`
+- `surface_metrics.csv` — per `(task, implementation)` metrics cache.
+- `correlation_raw.csv` — one row per
+  `(dataset, model, fold, layer, task_id, error_type, metric)` with
+  `pearson_r, r_squared, null_r2_mean, p_value, v1_explained_var, n_points`.
+- `correlation_summary.csv` / `.json` — macro-aggregated, one row per
+  `(dataset, model, layer, error_type, metric)` with
+  `macro_mean_r2, macro_std_r2, null_baseline (=0.333), n_folds, frac_tasks_above_null`.
+- `correlation_selected_layer.csv` — at each fold's validation-selected layer
+  (`results.json["selected_layer"]`), per-fold `r^2` per metric macro-averaged
+  across folds (each fold contributes its own layer's value).
+- `layer_curves.png` — macro-mean `r^2` vs layer, one line per metric, `+/-std`
+  band, dashed chance line at `1/3`. For Mutation_DS, also `layer_curves_<error_type>.png`
+  per error-type subset (error type derived from the mutation operator in the
+  mutant sample ids).
+
+Example (ICSE26 BigCodeBench, all folds):
+
+```bash
+python scripts/analysis/residual_pca_correlation.py \
+  --benchmark bigcodebench \
+  --model codellama/CodeLlama-7b-Instruct-hf \
+  --split-family icse26 \
+  --data-root dataset/icse26 \
+  --folds all \
+  --method mean_diff \
+  --fit-framing function \
+  --representation response_avg \
+  --val-framing neutral \
+  --test-framing neutral
+```
+
+Example (Mutation_DS `s8_single_arithmetic`, all folds):
+
+```bash
+python scripts/analysis/residual_pca_correlation.py \
+  --benchmark bigcodebench \
+  --model Qwen/Qwen2.5-Coder-7B-Instruct \
+  --split-family s8_single_arithmetic \
+  --data-root dataset/bigcodebench/phase2 \
+  --folds all
+```
+
+Computing surface metrics (the tree-edit distance in particular) is the slow,
+one-time step; it is cached in `surface_metrics.csv` and reused on subsequent
+runs (pass `--surface-metrics-path` to reuse an existing cache, e.g. across models).
+
+
 ## Regenerating the vectors/results (secondary)
 You don't need to do this. Just added information. The available `vectors/` and `results/` were produced
 by the experiments in `scripts/experiments/`. The code under

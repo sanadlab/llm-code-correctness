@@ -357,6 +357,63 @@ def parse_fold_selector(
     return parsed
 
 
+def is_ood_split_family(split_family: str) -> bool:
+    return split_family.startswith("ood_")
+
+
+def ood_source_from_split_family(split_family: str) -> str:
+    if not is_ood_split_family(split_family):
+        raise ValueError(f"not an OOD split family: {split_family!r}")
+    return split_family.removeprefix("ood_")
+
+
+def resolve_ood_outer_folds(*, data_root: Path, benchmark: str) -> List[int]:
+    manifest_path = data_root / benchmark / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"missing OOD outer-fold manifest: {manifest_path}")
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    return list(range(int(manifest["num_folds"])))
+
+
+def resolve_ood_inner_folds(*, data_root: Path, ood_source: str) -> List[int]:
+    manifest_path = data_root / ood_source / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"missing OOD inner-fold manifest: {manifest_path}")
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    return list(range(int(manifest["num_folds"])))
+
+
+def parse_ood_fold_selector(
+    folds_arg: Sequence[str],
+    *,
+    data_root: Path,
+    benchmark: str | None = None,
+    ood_source: str | None = None,
+    fold_kind: str,
+) -> List[int]:
+    if fold_kind not in {"outer", "inner"}:
+        raise ValueError(f"fold_kind must be 'outer' or 'inner', got {fold_kind!r}")
+    if len(folds_arg) == 1 and folds_arg[0] == "all":
+        if fold_kind == "outer":
+            if benchmark is None:
+                raise ValueError("benchmark required to resolve outer folds")
+            return resolve_ood_outer_folds(data_root=data_root, benchmark=benchmark)
+        if ood_source is None:
+            raise ValueError("ood_source required to resolve inner folds")
+        return resolve_ood_inner_folds(data_root=data_root, ood_source=ood_source)
+    try:
+        parsed = sorted({int(x) for x in folds_arg})
+    except ValueError as exc:
+        raise ValueError(f"--{fold_kind}-folds must be integers or 'all'") from exc
+    if not parsed:
+        raise ValueError(f"--{fold_kind}-folds resolved to an empty set")
+    if any(f < 0 for f in parsed):
+        raise ValueError(f"--{fold_kind}-folds must be non-negative")
+    return parsed
+
+
 def parse_layer_selector(layers_arg: Sequence[str]) -> Tuple[str, List[int] | None]:
     if len(layers_arg) == 1 and layers_arg[0] in {"selected", "all", "relevant"}:
         return layers_arg[0], None
@@ -473,6 +530,52 @@ def load_test_bundle(
     benchmark: str,
     fold: int,
     test_framing: str,
+    fold_prefix: str = "fold",
+) -> Dict[str, object]:
+    return load_cached_bundle(
+        hidden_states_root=hidden_states_root,
+        model=model,
+        split_family=split_family,
+        benchmark=benchmark,
+        fold=fold,
+        data_split="test",
+        framing=test_framing,
+        fold_prefix=fold_prefix,
+    )
+
+
+def load_validate_bundle(
+    *,
+    hidden_states_root: Path,
+    model: str,
+    split_family: str,
+    benchmark: str,
+    fold: int,
+    val_framing: str,
+    fold_prefix: str = "fold",
+) -> Dict[str, object]:
+    return load_cached_bundle(
+        hidden_states_root=hidden_states_root,
+        model=model,
+        split_family=split_family,
+        benchmark=benchmark,
+        fold=fold,
+        data_split="validate",
+        framing=val_framing,
+        fold_prefix=fold_prefix,
+    )
+
+
+def load_cached_bundle(
+    *,
+    hidden_states_root: Path,
+    model: str,
+    split_family: str,
+    benchmark: str,
+    fold: int,
+    data_split: str,
+    framing: str,
+    fold_prefix: str = "fold",
 ) -> Dict[str, object]:
     out_dir = bundle_output_dir(
         output_root=hidden_states_root,
@@ -480,13 +583,16 @@ def load_test_bundle(
         split_family=split_family,
         benchmark=benchmark,
         distribution="id",
-        data_split="test",
-        framing=test_framing,
+        data_split=data_split,
+        framing=framing,
         fold=fold,
+        fold_prefix=fold_prefix,
     )
     bundle_path = out_dir / "bundle.pt"
     if not bundle_path.is_file():
-        raise FileNotFoundError(f"missing cached test bundle: {bundle_path}")
+        raise FileNotFoundError(
+            f"missing cached {data_split} bundle: {bundle_path}"
+        )
     return torch.load(bundle_path, map_location="cpu")
 
 
@@ -501,6 +607,7 @@ def load_direction_vectors(
     representation: str,
     fold: int,
     distribution: str = "id",
+    fold_prefix: str = "fold",
 ) -> Dict[int, np.ndarray]:
     """Load per-layer reading vectors (incorrect -> correct) from ``direction.pt``."""
     common = vector_common_path(
@@ -512,7 +619,7 @@ def load_direction_vectors(
         fit_framing,
         representation,
     )
-    direction_path = vectors_root / common / f"fold_{fold}" / "direction.pt"
+    direction_path = vectors_root / common / f"{fold_prefix}_{fold}" / "direction.pt"
     if not direction_path.is_file():
         raise FileNotFoundError(f"missing direction vector file: {direction_path}")
 

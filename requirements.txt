@@ -12,3 +12,10 @@ transformers
 scikit-learn
 numpy
 matplotlib
+pandas
+
+# Analysis: surface-metric correlation (scripts/analysis/residual_pca_correlation.py)
+Levenshtein
+apted
+zss
+radon
