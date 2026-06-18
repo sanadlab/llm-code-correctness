@@ -134,7 +134,8 @@ def validate_mutants(cfg: Phase1Config) -> None:
                     f"preserved {len(preserved)} pass/fail rows, queued {len(timeout_ids)} timeout rows "
                     f"and {len(missing_ids)} missing rows"
                 )
-                retry_ids = timeout_ids | missing_ids
+                # retry_ids = timeout_ids | missing_ids
+                retry_ids = missing_ids
 
             pending = [m for m in mutants if m["mutant_id"] in retry_ids]
         else:
