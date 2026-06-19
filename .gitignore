@@ -45,10 +45,7 @@ env/
 *.swo
 
 # Personal Copilot/Claude/skill customizations (per-developer)
-# Ignore all of .github except shared workflows (viewer deploy sync).
-.github/*
-!.github/workflows/
-!.github/workflows/**
+.github/
 
 # Secrets and API keys
 .secrets.json
@@ -81,3 +78,6 @@ logs/
 # Code-reorg experiment raw outputs (tracked as compressed archives instead)
 code-reorg-results/
 code-reorg-vectors/
+
+#visualization interpretation results
+/analysis/
