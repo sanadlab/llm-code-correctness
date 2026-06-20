@@ -9,8 +9,10 @@ or ``--data-split validate`` for validation pairwise accuracy.
 
 For OOD split families (``ood_mbpp``, ``ood_synthetic``), directions are fit on
 the OOD source (inner folds) and evaluated on the ID test benchmark (outer
-folds). Test curves macro-average per-layer accuracy over all selected
-(outer, inner) cells; validation curves macro-average over inner folds only.
+folds). Test implementation hidden states are loaded from the matching
+``icse26`` caches (same benchmark test jsonl as the OOD experiment). Test
+curves macro-average per-layer accuracy over all selected (outer, inner) cells;
+validation curves macro-average over inner folds only.
 
 Reads only precomputed artifacts:
   - hidden states from ``hidden_states/.../bundle.pt`` (test or validate split)
@@ -56,6 +58,7 @@ from scripts.experiments._common import pairwise_accuracy
 from src.hidden_states.cache import safe_model_dir
 
 DATA_SPLIT_CHOICES = ("test", "validate")
+OOD_TEST_BUNDLE_SPLIT_FAMILY = "icse26"
 
 MODEL_PLOT_ORDER = (
     "mistralai/Mistral-7B-Instruct-v0.3",
@@ -222,10 +225,15 @@ def _load_bundle_for_cell(
     if data_split == "test":
         if outer_fold is None:
             raise ValueError("outer_fold required for OOD test evaluation")
+        bundle_split_family = (
+            OOD_TEST_BUNDLE_SPLIT_FAMILY
+            if is_ood_split_family(split_family)
+            else split_family
+        )
         return load_test_bundle(
             hidden_states_root=hidden_states_root,
             model=model,
-            split_family=split_family,
+            split_family=bundle_split_family,
             benchmark=benchmark,
             fold=outer_fold,
             test_framing=test_framing,
