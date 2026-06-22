@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Compute validation 1-of-4 accuracy from cached hidden-state bundles.
+"""Compute validation and test 1-of-4 accuracy from cached hidden-state bundles.
 
 This is the analysis entry point for the ``icse26_val_1_4`` validation split,
 where each task has four candidate implementations (one correct, three
 incorrect). It reuses existing fit directions from ``vectors/`` and projects
-the cached validation bundles without re-running the model.
+the cached validation and test bundles without re-running the model.
+
+Per-fold outputs follow the same layout as the main ``results/`` tree:
+``<results-root>/<model>/<split_family>/.../fold_N/{results,detailed,metadata}.json``.
 
 Results are written under ``results_icse26_val_1_4/`` by default — a separate
 tree from the main ``results/`` directory used by the original experiments.
@@ -94,6 +97,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--folds", nargs="*", type=int, default=list(range(10)))
     parser.add_argument(
+        "--skip-test",
+        action="store_true",
+        help="Only score validation bundles (skip test when caches are unavailable).",
+    )
+    parser.add_argument(
         "--summary-csv",
         type=Path,
         default=None,
@@ -112,6 +120,8 @@ def write_summary_csv(path: Path, rows: List[Dict[str, object]]) -> None:
         "selected_layer",
         "val_one_of_4",
         "val_pairwise_acc",
+        "test_one_of_4",
+        "test_pairwise_acc",
     ]
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -154,7 +164,7 @@ def main() -> None:
             val_framing=args.val_framing,
             test_framing=args.test_framing,
             layer_selection_metric=args.layer_selection_metric,
-            score_test=False,
+            score_test=not args.skip_test,
             experiment_script="scripts/analysis/val_one_of_4_from_cache.py",
         )
         per_fold.append(fold_result)
@@ -167,6 +177,8 @@ def main() -> None:
                 "selected_layer": fold_result["selected_layer"],
                 "val_one_of_4": fold_result["val_one_of_4"],
                 "val_pairwise_acc": fold_result["val_pairwise_acc"],
+                "test_one_of_4": fold_result["test_one_of_4"],
+                "test_pairwise_acc": fold_result["test_pairwise"],
             }
         )
 
@@ -178,6 +190,13 @@ def main() -> None:
         f"\n[summary] mean val 1-of-4 = {mean_val_1of4:.3f}  "
         f"mean val pairwise = {mean_val_pair:.3f}  (n_folds={len(per_fold)})"
     )
+    if per_fold[0]["test_one_of_4"] is not None:
+        mean_test_1of4 = sum(float(x["test_one_of_4"]) for x in per_fold) / len(per_fold)
+        mean_test_pair = sum(float(x["test_pairwise"]) for x in per_fold) / len(per_fold)
+        print(
+            f"[summary] mean test 1-of-4 = {mean_test_1of4:.3f}  "
+            f"mean test pairwise = {mean_test_pair:.3f}"
+        )
     print(f"[summary] wrote per-fold table to {summary_csv.resolve()}")
 
 

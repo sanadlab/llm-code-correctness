@@ -120,6 +120,7 @@ REPRESENTATIONS: Dict[str, Representation] = {
     "prompt_last": PromptLast(),
     "response_avg": ResponseAvg(),
     "sequence_last": SequenceLast(),
+    "seq_last": SequenceLast(),
 }
 
 METHODS: Dict[str, VectorMethod] = {
