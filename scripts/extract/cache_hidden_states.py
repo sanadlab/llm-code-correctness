@@ -227,9 +227,21 @@ def extract_one_job(
     git_sha: str,
 ) -> None:
     """Run extraction + save one cache cell."""
-    if bundle_is_complete(job.output_dir, config.force):
+    if not config.force and bundle_is_complete(
+        job.output_dir, force=False, expected_representations=config.representations
+    ):
         logger.info("skip existing: %s", job.output_dir)
         return
+    if (
+        not config.force
+        and (job.output_dir / "bundle.pt").is_file()
+        and (job.output_dir / "metadata.json").is_file()
+    ):
+        logger.info(
+            "incomplete cache (need representations %s), re-extracting: %s",
+            config.representations,
+            job.output_dir,
+        )
     if not job.jsonl_path.is_file():
         raise FileNotFoundError(f"missing split file: {job.jsonl_path}")
 

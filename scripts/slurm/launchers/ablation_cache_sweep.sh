@@ -2,11 +2,7 @@
 # Submit the full ablation hidden-state caching sweep (stage 1).
 #
 # For each model, submits one ablation_cache.sbatch job per dataset-source
-# spec needed by the ablation grid:
-#   - in-domain: bigcodebench, humaneval                  (2 specs)
-#   - OOD:       (mbpp, synthetic) x (bigcodebench, humaneval)  (4 specs)
-# 4 models x 6 specs = 24 jobs. Each job internally loops over the
-# (split, framing) combinations its spec needs (see ablation_cache.sbatch).
+# spec (see scripts/slurm/ablation_grid.sh). Stage 2 uses the same 6 specs.
 #
 # Note: OOD test bundles are keyed by split_family=ood_<source>, so the
 # outer test extraction is repeated once per ood-source even though the
@@ -41,22 +37,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JOB_SCRIPT="${SCRIPT_DIR}/../jobs/ablation_cache.sbatch"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+# shellcheck source=../ablation_grid.sh
+source "${SCRIPT_DIR}/../ablation_grid.sh"
 
 if [[ -n "${MODELS:-}" ]]; then
     read -r -a MODELS <<< "${MODELS}"
 else
-    MODELS=(
-        "Qwen/Qwen2.5-Coder-7B-Instruct"
-        "infly/OpenCoder-8B-Instruct"
-        "codellama/CodeLlama-7b-Instruct-hf"
-        "mistralai/Mistral-7B-Instruct-v0.3"
-    )
+    MODELS=("${ABLATION_MODELS[@]}")
 fi
 OUTPUT_DIR="${OUTPUT_DIR:-hidden_states}"
 DATA_ROOT="${DATA_ROOT:-dataset/icse26}"
-BENCHMARKS=("bigcodebench" "humaneval")
-OOD_SOURCES=("mbpp" "synthetic")
-TEST_DATASETS=("bigcodebench" "humaneval")
+BENCHMARKS=("${ABLATION_BENCHMARKS[@]}")
+OOD_SOURCES=("${ABLATION_OOD_SOURCES[@]}")
+TEST_DATASETS=("${ABLATION_TEST_DATASETS[@]}")
 
 PARTITION="${PARTITION:-nvidia}"
 ACCOUNT="${ACCOUNT:-}"

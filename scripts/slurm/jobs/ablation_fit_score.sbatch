@@ -9,8 +9,7 @@
 
 # Ablation sweep — stage 2 (fit + score from cached hidden states).
 # CPU-only tensor math on already-cached activations; no GPU/model load.
-# Runs all (representation, method, fit-framing, val-framing) combos for one
-# model x (fit-source, test-dataset) spec (24 combos; see ablation_fit_score_sweep.sh).
+# model x (fit-source, test-dataset) spec (see scripts/slurm/ablation_grid.sh).
 #
 # Overridable env vars (passed via --export by the launcher):
 #   MODEL              HF model id (required)

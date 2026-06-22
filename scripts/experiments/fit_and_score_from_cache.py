@@ -134,6 +134,27 @@ def _score_test(direction, layers, representation, bundle_test: HiddenStateBundl
     return test_per_layer
 
 
+def _result_path(
+    results_dir: Path,
+    common_path: str,
+    eval_segment: str,
+    cell_name: str,
+) -> Path:
+    return results_dir / common_path / eval_segment / cell_name / "results.json"
+
+
+def _combo_is_complete(
+    results_dir: Path,
+    common_path: str,
+    eval_segment: str,
+    cell_names: List[str],
+) -> bool:
+    return all(
+        _result_path(results_dir, common_path, eval_segment, name).is_file()
+        for name in cell_names
+    )
+
+
 def _write_results(
     results_dir: Path,
     common_path: str,
@@ -291,11 +312,12 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--representation", required=True, choices=list(REPRESENTATIONS))
     parser.add_argument("--method", required=True, choices=list(METHODS))
-    parser.add_argument("--fit-framing", required=True, choices=["function", "neutral", "concept"])
+    parser.add_argument("--fit-framing", required=True, choices=["function", "neutral", "concept"],
+                        help="Must match ABLATION_FIT_FRAMINGS in scripts/slurm/ablation_grid.sh.")
     parser.add_argument("--val-framing", required=True, choices=["neutral", "concept"],
-                        help="Framing for the validate split (layer selection).")
+                        help="Must match ABLATION_VAL_FRAMINGS in scripts/slurm/ablation_grid.sh.")
     parser.add_argument("--test-framing", default=None, choices=["neutral", "concept"],
-                        help="Framing for the test split (default: same as --val-framing).")
+                        help="Must match ABLATION_TEST_FRAMINGS in scripts/slurm/ablation_grid.sh.")
     parser.add_argument("--fit-source", required=True, choices=["in-domain", "mbpp", "synthetic"])
     parser.add_argument("--test-dataset", required=True, choices=["bigcodebench", "humaneval"])
     parser.add_argument("--data-root", default="dataset/icse26")
@@ -307,6 +329,8 @@ def main():
                         help="OOD only: subset of inner (fit/val) folds (default: all).")
     parser.add_argument("--outer-folds", nargs="*", type=int, default=None,
                         help="OOD only: subset of outer (test) folds (default: all).")
+    parser.add_argument("--skip-existing", action="store_true",
+                        help="Skip if all expected results.json files already exist.")
     args = parser.parse_args()
     args.hidden_states_root = Path(args.hidden_states_root)
     if args.test_framing is None:
@@ -314,6 +338,35 @@ def main():
 
     representation = REPRESENTATIONS[args.representation]
     method = METHODS[args.method]
+
+    if args.skip_existing and args.results_dir:
+        data_root = Path(args.data_root)
+        if args.fit_source == "in-domain":
+            split_family = "icse26"
+            common_path = (
+                f"{safe_model_dir(args.model)}/{split_family}/{args.test_dataset}/id/"
+                f"{method.name}/{args.fit_framing}/{representation.name}"
+            )
+            eval_segment = f"val={args.val_framing}__test={args.test_framing}"
+            folds = args.folds or list(range(_num_folds(data_root, args.test_dataset)))
+            cell_names = [f"fold_{fold}" for fold in folds]
+        else:
+            split_family = f"ood_{args.fit_source}"
+            common_path = (
+                f"{safe_model_dir(args.model)}/{split_family}/{args.test_dataset}/id/"
+                f"{method.name}/{args.fit_framing}/{representation.name}"
+            )
+            eval_segment = f"val={args.val_framing}__test={args.test_framing}"
+            inner_folds = args.inner_folds or list(range(_num_folds(data_root, args.fit_source)))
+            outer_folds = args.outer_folds or list(range(_num_folds(data_root, args.test_dataset)))
+            cell_names = [
+                f"outer_{outer}_inner_{inner}"
+                for inner in inner_folds
+                for outer in outer_folds
+            ]
+        if _combo_is_complete(Path(args.results_dir), common_path, eval_segment, cell_names):
+            print(f"[skip] results already complete for {common_path}/{eval_segment}")
+            return
 
     if args.fit_source == "in-domain":
         cells = run_in_domain(args, representation, method)

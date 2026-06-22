@@ -9,10 +9,8 @@
 #SBATCH --time=04:00:00
 
 # Ablation sweep — stage 1 (hidden-state caching).
-# Runs scripts/extract/cache_hidden_states.py once per (split, framing)
-# the ablation grid needs, for one model x dataset-source spec. The model
-# is reloaded once per invocation (5 invocations per spec), which is cheap
-# next to the per-split forward pass.
+# Runs scripts/extract/cache_hidden_states.py for one model x dataset-source
+# spec. Framing/representation axes come from scripts/slurm/ablation_grid.sh.
 #
 # Overridable env vars (passed via --export by the launcher):
 #   MODEL            HF model id
@@ -53,6 +51,9 @@ mkdir -p "${REPO_ROOT}/logs/slurm"
 cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 
+# shellcheck source=../ablation_grid.sh
+source "${REPO_ROOT}/scripts/slurm/ablation_grid.sh"
+
 if [[ -z "${SCRATCH:-}" ]]; then
     echo "Error: SCRATCH is not set." >&2; exit 1
 fi
@@ -86,7 +87,7 @@ echo "======================================"
 COMMON_ARGS=(
     --models "${MODEL}"
     --data-root "${DATA_ROOT}"
-    --representations response_avg sequence_last
+    --representations "${ABLATION_REPRESENTATIONS[@]}"
     --batch-size "${BATCH_SIZE}"
     --fit-max-length "${FIT_MAX_LENGTH}"
     --eval-max-length "${EVAL_MAX_LENGTH}"
@@ -96,29 +97,29 @@ COMMON_ARGS=(
 
 if [[ "${DATASET_SOURCE}" == "icse26" ]]; then
     DATASET_ARGS=(--dataset-source icse26 --benchmark "${BENCHMARK}")
-    for framing in function neutral concept; do
+    for framing in "${ABLATION_FIT_FRAMINGS[@]}"; do
         echo "--- fit framing=${framing} ---"
         python -u scripts/extract/cache_hidden_states.py "${COMMON_ARGS[@]}" "${DATASET_ARGS[@]}" \
             --data-splits fit --framing "${framing}"
     done
-    for framing in neutral concept; do
+    for framing in "${ABLATION_VAL_FRAMINGS[@]}"; do
         echo "--- validate+test framing=${framing} ---"
         python -u scripts/extract/cache_hidden_states.py "${COMMON_ARGS[@]}" "${DATASET_ARGS[@]}" \
             --data-splits validate test --framing "${framing}"
     done
 else
     DATASET_ARGS=(--dataset-source ood --ood-source "${OOD_SOURCE}" --test-dataset "${TEST_DATASET}")
-    for framing in function neutral concept; do
+    for framing in "${ABLATION_FIT_FRAMINGS[@]}"; do
         echo "--- inner fit framing=${framing} ---"
         python -u scripts/extract/cache_hidden_states.py "${COMMON_ARGS[@]}" "${DATASET_ARGS[@]}" \
             --data-splits fit --framing "${framing}"
     done
-    for framing in neutral concept; do
+    for framing in "${ABLATION_VAL_FRAMINGS[@]}"; do
         echo "--- inner validate framing=${framing} ---"
         python -u scripts/extract/cache_hidden_states.py "${COMMON_ARGS[@]}" "${DATASET_ARGS[@]}" \
             --data-splits validate --framing "${framing}"
     done
-    for framing in neutral concept; do
+    for framing in "${ABLATION_TEST_FRAMINGS[@]}"; do
         echo "--- outer test framing=${framing} ---"
         python -u scripts/extract/cache_hidden_states.py "${COMMON_ARGS[@]}" "${DATASET_ARGS[@]}" \
             --data-splits test --framing "${framing}"

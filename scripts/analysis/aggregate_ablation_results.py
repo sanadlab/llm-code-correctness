@@ -3,7 +3,7 @@
 Walks a results directory for `results.json` files (one per fold, or per
 outer/inner cell for OOD fit sources) and groups them by every ablation axis
 (model, fit_source, test_dataset, method, representation, fit_framing,
-val_framing), computing the mean and population std of `test_one_of_4` and
+val_framing, test_framing), computing the mean and population std of `test_one_of_4` and
 `test_pairwise` within each group.
 
 Usage:
@@ -23,7 +23,7 @@ from typing import Dict, List, Tuple
 
 GROUP_FIELDS = (
     "model", "fit_source", "test_dataset", "method",
-    "representation", "fit_framing", "val_framing",
+    "representation", "fit_framing", "val_framing", "test_framing",
 )
 
 

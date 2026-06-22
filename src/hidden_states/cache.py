@@ -105,10 +105,34 @@ def bundle_output_dir(
     )
 
 
-def bundle_is_complete(out_dir: Path, force: bool) -> bool:
+def bundle_is_complete(
+    out_dir: Path,
+    force: bool,
+    expected_representations: Sequence[str] = (),
+) -> bool:
+    """Return True when an on-disk bundle can be skipped for this extraction run.
+
+    A bundle is complete when ``bundle.pt`` and ``metadata.json`` exist and the
+    metadata lists every representation requested for the current run. This lets
+    reruns backfill partially cached cells (e.g. an older bundle with only
+    ``response_avg``) without re-extracting cells that already have everything.
+    """
     if force:
         return False
-    return (out_dir / "bundle.pt").is_file() and (out_dir / "metadata.json").is_file()
+    bundle_path = out_dir / "bundle.pt"
+    meta_path = out_dir / "metadata.json"
+    if not bundle_path.is_file() or not meta_path.is_file():
+        return False
+    if not expected_representations:
+        return True
+    try:
+        meta = json.loads(meta_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+    cached = meta.get("representations")
+    if not isinstance(cached, list):
+        return False
+    return set(expected_representations).issubset(cached)
 
 
 def sample_ids_hash(sample_ids: Sequence[str]) -> str:

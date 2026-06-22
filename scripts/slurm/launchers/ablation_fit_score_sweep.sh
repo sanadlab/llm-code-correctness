@@ -2,12 +2,7 @@
 # Submit the ablation fit+score sweep (stage 2).
 #
 # For each model, submits one ablation_fit_score.sbatch job per dataset-source
-# spec needed by the ablation grid (same partition as stage 1):
-#   - in-domain: bigcodebench, humaneval                  (2 specs)
-#   - OOD:       (mbpp, synthetic) x (bigcodebench, humaneval)  (4 specs)
-# 4 models x 6 specs = 24 jobs. Each job internally loops over the
-# (representation, method, fit-framing, val-framing) combinations its spec
-# needs (2 x 2 x 3 x 2 = 24 combos per job).
+# spec (see scripts/slurm/ablation_grid.sh; same 6 specs as stage 1).
 #
 # Splitting across collaborators: results are keyed by model first
 # (ablation_results/<safe_model>/...), so two people can each run a disjoint
@@ -28,21 +23,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 JOB_SCRIPT="${SCRIPT_DIR}/../jobs/ablation_fit_score.sbatch"
+# shellcheck source=../ablation_grid.sh
+source "${SCRIPT_DIR}/../ablation_grid.sh"
 
 if [[ -n "${MODELS:-}" ]]; then
     read -r -a MODELS <<< "${MODELS}"
 else
-    MODELS=(
-        "Qwen/Qwen2.5-Coder-7B-Instruct"
-        "infly/OpenCoder-8B-Instruct"
-        "codellama/CodeLlama-7b-Instruct-hf"
-        "mistralai/Mistral-7B-Instruct-v0.3"
-    )
+    MODELS=("${ABLATION_MODELS[@]}")
 fi
 
-BENCHMARKS=("bigcodebench" "humaneval")
-OOD_SOURCES=("mbpp" "synthetic")
-TEST_DATASETS=("bigcodebench" "humaneval")
+BENCHMARKS=("${ABLATION_BENCHMARKS[@]}")
+OOD_SOURCES=("${ABLATION_OOD_SOURCES[@]}")
+TEST_DATASETS=("${ABLATION_TEST_DATASETS[@]}")
 
 PARTITION="${PARTITION:-compute}"
 ACCOUNT="${ACCOUNT:-}"
@@ -111,36 +103,40 @@ run_sweep_for_spec() {
     cd "${REPO_ROOT}"
     export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 
-    local REPRESENTATIONS=("response_avg" "sequence_last")
-    local METHODS=("mean_diff" "pca")
-    local FIT_FRAMINGS=("function" "neutral" "concept")
-    local VAL_FRAMINGS=("neutral" "concept")
+    local REPRESENTATIONS=("${ABLATION_REPRESENTATIONS[@]}")
+    local METHODS=("${ABLATION_METHODS[@]}")
+    local FIT_FRAMINGS=("${ABLATION_FIT_FRAMINGS[@]}")
+    local VAL_FRAMINGS=("${ABLATION_VAL_FRAMINGS[@]}")
+    local TEST_FRAMINGS=("${ABLATION_TEST_FRAMINGS[@]}")
 
     local n=0
-    local REP METHOD FIT_FRAMING VAL_FRAMING
+    local REP METHOD FIT_FRAMING VAL_FRAMING TEST_FRAMING
     for REP in "${REPRESENTATIONS[@]}"; do
         for METHOD in "${METHODS[@]}"; do
             for FIT_FRAMING in "${FIT_FRAMINGS[@]}"; do
                 for VAL_FRAMING in "${VAL_FRAMINGS[@]}"; do
-                    n=$((n + 1))
-                    local -a cmd=(python -u "${FIT_SCORE_SCRIPT}"
-                        --model "${model}"
-                        --representation "${REP}"
-                        --method "${METHOD}"
-                        --fit-framing "${FIT_FRAMING}"
-                        --val-framing "${VAL_FRAMING}"
-                        --fit-source "${fit_source}"
-                        --test-dataset "${test_dataset}"
-                        --hidden-states-root "${HIDDEN_STATES_ROOT}"
-                        --results-dir "${RESULTS_DIR}"
-                        --data-root "${DATA_ROOT}")
-                    if [[ "${SKIP_EXISTING}" -eq 1 ]]; then
-                        cmd+=(--skip-existing)
-                    fi
-                    echo "[${n}] ${cmd[*]}"
-                    if [[ "${DRY_RUN}" -eq 0 ]]; then
-                        "${cmd[@]}"
-                    fi
+                    for TEST_FRAMING in "${TEST_FRAMINGS[@]}"; do
+                        n=$((n + 1))
+                        local -a cmd=(python -u "${FIT_SCORE_SCRIPT}"
+                            --model "${model}"
+                            --representation "${REP}"
+                            --method "${METHOD}"
+                            --fit-framing "${FIT_FRAMING}"
+                            --val-framing "${VAL_FRAMING}"
+                            --test-framing "${TEST_FRAMING}"
+                            --fit-source "${fit_source}"
+                            --test-dataset "${test_dataset}"
+                            --hidden-states-root "${HIDDEN_STATES_ROOT}"
+                            --results-dir "${RESULTS_DIR}"
+                            --data-root "${DATA_ROOT}")
+                        if [[ "${SKIP_EXISTING}" -eq 1 ]]; then
+                            cmd+=(--skip-existing)
+                        fi
+                        echo "[${n}] ${cmd[*]}"
+                        if [[ "${DRY_RUN}" -eq 0 ]]; then
+                            "${cmd[@]}"
+                        fi
+                    done
                 done
             done
         done
