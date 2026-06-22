@@ -28,7 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from scripts.experiments._common import (
     METHODS,
@@ -118,7 +118,7 @@ def _fit_and_select(
     # _common.run_cross_validation for the full explanation).
     ordered = sorted(val_per_layer.keys(), reverse=True)
     selected_layer = max(ordered, key=lambda l: val_per_layer[l])
-    return direction, layers, val_per_layer, selected_layer
+    return direction, layers, val_scores_all, val_per_layer, selected_layer
 
 
 def _score_test(direction, layers, representation, bundle_test: HiddenStateBundle):
@@ -131,16 +131,23 @@ def _score_test(direction, layers, representation, bundle_test: HiddenStateBundl
             "one_of_4": one_of_n_accuracy(col, bundle_test.labels, bundle_test.task_ids),
             "pairwise_acc": pairwise_accuracy(col, bundle_test.labels, bundle_test.task_ids),
         }
-    return test_per_layer
+    return test_scores_all, test_per_layer
 
 
-def _result_path(
+def _load_bundle_metadata(bundle_dir: Path) -> Dict[str, Any]:
+    meta_path = bundle_dir / "metadata.json"
+    if meta_path.is_file():
+        return json.loads(meta_path.read_text())
+    return {}
+
+
+def _cell_dir(
     results_dir: Path,
     common_path: str,
     eval_segment: str,
     cell_name: str,
 ) -> Path:
-    return results_dir / common_path / eval_segment / cell_name / "results.json"
+    return results_dir / common_path / eval_segment / cell_name
 
 
 def _combo_is_complete(
@@ -148,24 +155,112 @@ def _combo_is_complete(
     common_path: str,
     eval_segment: str,
     cell_names: List[str],
+    *,
+    ood: bool,
 ) -> bool:
+    required = ("results.json", "metadata.json")
+    if not ood:
+        required = (*required, "detailed.json")
     return all(
-        _result_path(results_dir, common_path, eval_segment, name).is_file()
+        all((_cell_dir(results_dir, common_path, eval_segment, name) / fname).is_file()
+            for fname in required)
         for name in cell_names
     )
 
 
-def _write_results(
+def _write_in_domain_cell(
     results_dir: Path,
     common_path: str,
     eval_segment: str,
     cell_name: str,
-    payload: dict,
+    *,
+    fold: int,
+    layers: List[int],
+    val_scores_all,
+    test_scores_all,
+    bundle_val: HiddenStateBundle,
+    bundle_test: HiddenStateBundle,
+    val_per_layer: Dict[int, float],
+    test_per_layer: Dict[int, Dict[str, float]],
+    selected_layer: int,
+    sel_test: Dict[str, float],
+    best_layer: int,
+    meta: Dict[str, Any],
 ) -> None:
-    res_dir = Path(results_dir) / common_path / eval_segment / cell_name
+    res_dir = _cell_dir(results_dir, common_path, eval_segment, cell_name)
     res_dir.mkdir(parents=True, exist_ok=True)
+
+    detailed = {
+        "fold": fold,
+        "layers": list(layers),
+        "val": {
+            "sample_ids": list(bundle_val.sample_ids),
+            "task_ids": list(bundle_val.task_ids),
+            "labels": bundle_val.labels.tolist(),
+            "scores": val_scores_all.float().tolist(),
+        },
+        "test": {
+            "sample_ids": list(bundle_test.sample_ids),
+            "task_ids": list(bundle_test.task_ids),
+            "labels": bundle_test.labels.tolist(),
+            "scores": test_scores_all.float().tolist(),
+        },
+    }
+    with open(res_dir / "detailed.json", "w") as f:
+        json.dump(detailed, f)
+
+    results = {
+        "fold": fold,
+        "selected_layer": selected_layer,
+        "val_per_layer": {str(k): {"pairwise_acc": v} for k, v in val_per_layer.items()},
+        "test_per_layer": {str(k): v for k, v in test_per_layer.items()},
+        "test_at_selected_layer": dict(sel_test),
+        "test_theoretical_best_layer": {
+            "layer": best_layer,
+            **test_per_layer[best_layer],
+        },
+    }
     with open(res_dir / "results.json", "w") as f:
-        json.dump(payload, f, indent=2)
+        json.dump(results, f, indent=2)
+
+    with open(res_dir / "metadata.json", "w") as f:
+        json.dump(meta, f, indent=2)
+
+
+def _write_ood_cell(
+    results_dir: Path,
+    common_path: str,
+    eval_segment: str,
+    cell_name: str,
+    *,
+    outer_fold: int,
+    inner_fold: int,
+    val_per_layer: Dict[int, float],
+    test_per_layer: Dict[int, Dict[str, float]],
+    selected_layer: int,
+    sel_test: Dict[str, float],
+    best_layer: int,
+    meta: Dict[str, Any],
+) -> None:
+    res_dir = _cell_dir(results_dir, common_path, eval_segment, cell_name)
+    res_dir.mkdir(parents=True, exist_ok=True)
+
+    results = {
+        "outer_fold": outer_fold,
+        "inner_fold": inner_fold,
+        "selected_layer": selected_layer,
+        "val_per_layer": {str(k): {"pairwise_acc": v} for k, v in val_per_layer.items()},
+        "test_per_layer": {str(k): v for k, v in test_per_layer.items()},
+        "test_at_selected_layer": dict(sel_test),
+        "best_layer_on_test": best_layer,
+        "test_at_best_layer": test_per_layer[best_layer],
+        "val_pairwise_acc_at_selected": val_per_layer[selected_layer],
+    }
+    with open(res_dir / "results.json", "w") as f:
+        json.dump(results, f, indent=2)
+
+    with open(res_dir / "metadata.json", "w") as f:
+        json.dump(meta, f, indent=2)
 
 
 def run_in_domain(args, representation, method) -> List[dict]:
@@ -175,6 +270,8 @@ def run_in_domain(args, representation, method) -> List[dict]:
         f"{method.name}/{args.fit_framing}/{representation.name}"
     )
     eval_segment = f"val={args.val_framing}__test={args.test_framing}"
+    git_sha = git_commit()
+    experiment_script = "scripts/experiments/fit_and_score_from_cache.py"
 
     folds = args.folds or list(range(_num_folds(Path(args.data_root), args.test_dataset)))
     per_fold = []
@@ -195,11 +292,14 @@ def run_in_domain(args, representation, method) -> List[dict]:
         )
         _assert_representation(bundle_test, test_dir, representation)
 
-        direction, layers, val_per_layer, selected_layer = _fit_and_select(
+        direction, layers, val_scores_all, val_per_layer, selected_layer = _fit_and_select(
             bundle_fit, bundle_val, representation, method
         )
-        test_per_layer = _score_test(direction, layers, representation, bundle_test)
+        test_scores_all, test_per_layer = _score_test(
+            direction, layers, representation, bundle_test
+        )
         sel_test = test_per_layer[selected_layer]
+        best_layer = max(test_per_layer, key=lambda k: test_per_layer[k]["one_of_4"])
 
         result = {
             "fold": fold,
@@ -213,20 +313,35 @@ def run_in_domain(args, representation, method) -> List[dict]:
               f"test_1of4={sel_test['one_of_4']:.3f} test_pairwise={sel_test['pairwise_acc']:.3f}")
 
         if args.results_dir:
-            _write_results(
+            _write_in_domain_cell(
                 Path(args.results_dir), common_path, eval_segment, f"fold_{fold}",
-                {
-                    **result,
+                fold=fold,
+                layers=layers,
+                val_scores_all=val_scores_all,
+                test_scores_all=test_scores_all,
+                bundle_val=bundle_val,
+                bundle_test=bundle_test,
+                val_per_layer=val_per_layer,
+                test_per_layer=test_per_layer,
+                selected_layer=selected_layer,
+                sel_test=sel_test,
+                best_layer=best_layer,
+                meta={
+                    "vector_path": None,
                     "model": args.model,
-                    "test_dataset": args.test_dataset,
-                    "fit_source": "in-domain",
+                    "dataset": args.test_dataset,
+                    "split_family": split_family,
+                    "distribution": "id",
+                    "fold": fold,
                     "method": method.name,
                     "representation": representation.name,
                     "fit_framing": args.fit_framing,
                     "val_framing": args.val_framing,
                     "test_framing": args.test_framing,
-                    "git_commit": git_commit(),
-                    "experiment_script": "scripts/experiments/fit_and_score_from_cache.py",
+                    "n_val": bundle_val.num_samples,
+                    "n_test": bundle_test.num_samples,
+                    "experiment_script": experiment_script,
+                    "git_commit": git_sha,
                 },
             )
     return per_fold
@@ -239,6 +354,8 @@ def run_ood(args, representation, method) -> List[dict]:
         f"{method.name}/{args.fit_framing}/{representation.name}"
     )
     eval_segment = f"val={args.val_framing}__test={args.test_framing}"
+    git_sha = git_commit()
+    experiment_script = "scripts/experiments/fit_and_score_from_cache.py"
 
     inner_folds = args.inner_folds or list(range(_num_folds(Path(args.data_root), args.fit_source)))
     outer_folds = args.outer_folds or list(range(_num_folds(Path(args.data_root), args.test_dataset)))
@@ -266,13 +383,18 @@ def run_ood(args, representation, method) -> List[dict]:
             "id", "validate", args.val_framing, inner, "inner",
         )
         _assert_representation(bundle_val, val_dir, representation)
-        direction, layers, val_per_layer, selected_layer = _fit_and_select(
+        bundle_meta = _load_bundle_metadata(fit_dir)
+
+        direction, layers, _val_scores_all, val_per_layer, selected_layer = _fit_and_select(
             bundle_fit, bundle_val, representation, method
         )
 
         for outer in outer_folds:
-            test_per_layer = _score_test(direction, layers, representation, test_bundles[outer])
+            _test_scores_all, test_per_layer = _score_test(
+                direction, layers, representation, test_bundles[outer]
+            )
             sel_test = test_per_layer[selected_layer]
+            best_layer = max(test_per_layer, key=lambda k: test_per_layer[k]["one_of_4"])
 
             result = {
                 "outer_fold": outer,
@@ -287,21 +409,32 @@ def run_ood(args, representation, method) -> List[dict]:
                   f"test_1of4={sel_test['one_of_4']:.3f} test_pairwise={sel_test['pairwise_acc']:.3f}")
 
             if args.results_dir:
-                _write_results(
+                _write_ood_cell(
                     Path(args.results_dir), common_path, eval_segment,
                     f"outer_{outer}_inner_{inner}",
-                    {
-                        **result,
+                    outer_fold=outer,
+                    inner_fold=inner,
+                    val_per_layer=val_per_layer,
+                    test_per_layer=test_per_layer,
+                    selected_layer=selected_layer,
+                    sel_test=sel_test,
+                    best_layer=best_layer,
+                    meta={
                         "model": args.model,
+                        "ood_source": args.fit_source,
                         "test_dataset": args.test_dataset,
-                        "fit_source": args.fit_source,
+                        "outer_fold": outer,
+                        "inner_fold": inner,
                         "method": method.name,
                         "representation": representation.name,
                         "fit_framing": args.fit_framing,
                         "val_framing": args.val_framing,
                         "test_framing": args.test_framing,
-                        "git_commit": git_commit(),
-                        "experiment_script": "scripts/experiments/fit_and_score_from_cache.py",
+                        "chat_template": bundle_meta.get("chat_template"),
+                        "dtype": bundle_meta.get("dtype"),
+                        "max_length": bundle_meta.get("max_length"),
+                        "experiment_script": experiment_script,
+                        "git_commit": git_sha,
                     },
                 )
     return per_cell
@@ -330,7 +463,7 @@ def main():
     parser.add_argument("--outer-folds", nargs="*", type=int, default=None,
                         help="OOD only: subset of outer (test) folds (default: all).")
     parser.add_argument("--skip-existing", action="store_true",
-                        help="Skip if all expected results.json files already exist.")
+                        help="Skip if all expected result artifacts already exist.")
     args = parser.parse_args()
     args.hidden_states_root = Path(args.hidden_states_root)
     if args.test_framing is None:
@@ -364,7 +497,10 @@ def main():
                 for inner in inner_folds
                 for outer in outer_folds
             ]
-        if _combo_is_complete(Path(args.results_dir), common_path, eval_segment, cell_names):
+        if _combo_is_complete(
+            Path(args.results_dir), common_path, eval_segment, cell_names,
+            ood=args.fit_source != "in-domain",
+        ):
             print(f"[skip] results already complete for {common_path}/{eval_segment}")
             return
 

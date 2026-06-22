@@ -51,7 +51,7 @@ else
 fi
 
 HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-hidden_states}"
-RESULTS_DIR="${RESULTS_DIR:-ablation_results}"
+RESULTS_DIR="${RESULTS_DIR:-full_ablation_results}"
 DATA_ROOT="${DATA_ROOT:-dataset/icse26}"
 
 MODE="submit"
