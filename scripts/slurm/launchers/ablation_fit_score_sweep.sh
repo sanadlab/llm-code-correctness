@@ -1,22 +1,37 @@
 #!/bin/bash
-# Stage 2 of the ablation sweep: fit + score every combination from cached
-# hidden states (scripts/experiments/fit_and_score_from_cache.py). Pure
-# tensor math on already-cached activations -- no GPU/model load needed.
+# Submit the ablation fit+score sweep (stage 2).
 #
-# Grid: 4 models x 2 representations x 2 methods x 3 fit-framings x
-#       2 val/test-framings x (in-domain x 2 datasets + ood x 2 sources x
-#       2 datasets) = 4*2*2*3*2*6 = 576 combinations.
+# For each model, submits one ablation_fit_score.sbatch job that loops over
+# every (representation, method, fit-framing, val-framing, fit-source,
+# test-dataset) combination for that model: 144 combos per model, 4 models
+# = 576 total.
+#
+# Splitting across collaborators: results are keyed by model first
+# (ablation_results/<safe_model>/...), so two people can each run a disjoint
+# subset of MODELS against the SAME shared RESULTS_DIR with zero path
+# collisions -- no merge step needed afterward.
 #
 # Usage:
-#   bash scripts/slurm/launchers/ablation_fit_score_sweep.sh            # submit SLURM job
-#   bash scripts/slurm/launchers/ablation_fit_score_sweep.sh --local    # run loop directly
-#   bash scripts/slurm/launchers/ablation_fit_score_sweep.sh --dry-run  # print sbatch command
+#   bash scripts/slurm/launchers/ablation_fit_score_sweep.sh [--dry-run]
+#   MODELS="model/a model/b" bash scripts/slurm/launchers/ablation_fit_score_sweep.sh
+#   MODEL="Qwen/Qwen2.5-Coder-7B-Instruct" bash scripts/slurm/launchers/ablation_fit_score_sweep.sh --local
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 JOB_SCRIPT="${SCRIPT_DIR}/../jobs/ablation_fit_score.sbatch"
+
+if [[ -n "${MODELS:-}" ]]; then
+    read -r -a MODELS <<< "${MODELS}"
+else
+    MODELS=(
+        "Qwen/Qwen2.5-Coder-7B-Instruct"
+        "infly/OpenCoder-8B-Instruct"
+        "codellama/CodeLlama-7b-Instruct-hf"
+        "mistralai/Mistral-7B-Instruct-v0.3"
+    )
+fi
 
 PARTITION="${PARTITION:-compute}"
 ACCOUNT="${ACCOUNT:-}"
@@ -50,21 +65,12 @@ for arg in "$@"; do
     esac
 done
 
-submit_job() {
-    if [[ -z "${SCRATCH:-}" ]]; then
-        echo "Error: SCRATCH is not set." >&2
-        exit 1
-    fi
-    if [[ -z "${ENV_DIR}" ]]; then
-        echo "Error: ENV_DIR is not set." >&2
-        exit 1
-    fi
-
-    mkdir -p "${REPO_ROOT}/logs/slurm"
-    cd "${REPO_ROOT}"
+submit() {
+    local model="$1"
+    local safe_model="${model//\//__}"
 
     local -a sbatch_args=(
-        --job-name="ablation_fit_score"
+        --job-name="ablation_fit_score_${safe_model}"
         --partition="${PARTITION}"
         --cpus-per-task="${CPUS}"
         --mem="${MEM}"
@@ -74,6 +80,7 @@ submit_job() {
     [[ -n "${QOS}" ]]     && sbatch_args+=(--qos="${QOS}")
 
     local -a env_vars=(
+        "MODEL=${model}"
         "HIDDEN_STATES_ROOT=${HIDDEN_STATES_ROOT}"
         "RESULTS_DIR=${RESULTS_DIR}"
         "DATA_ROOT=${DATA_ROOT}"
@@ -91,16 +98,11 @@ submit_job() {
     fi
 }
 
-run_sweep() {
+run_sweep_for_model() {
+    local model="$1"
     cd "${REPO_ROOT}"
     export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 
-    local MODELS=(
-        "Qwen/Qwen2.5-Coder-7B-Instruct"
-        "infly/OpenCoder-8B-Instruct"
-        "codellama/CodeLlama-7b-Instruct-hf"
-        "mistralai/Mistral-7B-Instruct-v0.3"
-    )
     local REPRESENTATIONS=("response_avg" "sequence_last")
     local METHODS=("mean_diff" "pca")
     local FIT_FRAMINGS=("function" "neutral" "concept")
@@ -109,42 +111,65 @@ run_sweep() {
     local FIT_SOURCES=("in-domain" "mbpp" "synthetic")
 
     local n=0
-    local MODEL REP METHOD FIT_FRAMING VAL_FRAMING FIT_SOURCE TEST_DATASET
-    for MODEL in "${MODELS[@]}"; do
-        for REP in "${REPRESENTATIONS[@]}"; do
-            for METHOD in "${METHODS[@]}"; do
-                for FIT_FRAMING in "${FIT_FRAMINGS[@]}"; do
-                    for VAL_FRAMING in "${VAL_FRAMINGS[@]}"; do
-                        for FIT_SOURCE in "${FIT_SOURCES[@]}"; do
-                            for TEST_DATASET in "${TEST_DATASETS[@]}"; do
-                                n=$((n + 1))
-                                local -a cmd=(python -u scripts/experiments/fit_and_score_from_cache.py
-                                    --model "${MODEL}"
-                                    --representation "${REP}"
-                                    --method "${METHOD}"
-                                    --fit-framing "${FIT_FRAMING}"
-                                    --val-framing "${VAL_FRAMING}"
-                                    --fit-source "${FIT_SOURCE}"
-                                    --test-dataset "${TEST_DATASET}"
-                                    --hidden-states-root "${HIDDEN_STATES_ROOT}"
-                                    --results-dir "${RESULTS_DIR}"
-                                    --data-root "${DATA_ROOT}")
-                                echo "[${n}] ${cmd[*]}"
-                                if [[ "${DRY_RUN}" -eq 0 ]]; then
-                                    "${cmd[@]}"
-                                fi
-                            done
+    local REP METHOD FIT_FRAMING VAL_FRAMING FIT_SOURCE TEST_DATASET
+    for REP in "${REPRESENTATIONS[@]}"; do
+        for METHOD in "${METHODS[@]}"; do
+            for FIT_FRAMING in "${FIT_FRAMINGS[@]}"; do
+                for VAL_FRAMING in "${VAL_FRAMINGS[@]}"; do
+                    for FIT_SOURCE in "${FIT_SOURCES[@]}"; do
+                        for TEST_DATASET in "${TEST_DATASETS[@]}"; do
+                            n=$((n + 1))
+                            local -a cmd=(python -u scripts/experiments/fit_and_score_from_cache.py
+                                --model "${model}"
+                                --representation "${REP}"
+                                --method "${METHOD}"
+                                --fit-framing "${FIT_FRAMING}"
+                                --val-framing "${VAL_FRAMING}"
+                                --fit-source "${FIT_SOURCE}"
+                                --test-dataset "${TEST_DATASET}"
+                                --hidden-states-root "${HIDDEN_STATES_ROOT}"
+                                --results-dir "${RESULTS_DIR}"
+                                --data-root "${DATA_ROOT}")
+                            echo "[${n}] ${cmd[*]}"
+                            if [[ "${DRY_RUN}" -eq 0 ]]; then
+                                "${cmd[@]}"
+                            fi
                         done
                     done
                 done
             done
         done
     done
-    echo "Total combinations: ${n}"
+    echo "Model ${model}: ${n} combinations"
+}
+
+run_sweep() {
+    if [[ -n "${MODEL:-}" ]]; then
+        run_sweep_for_model "${MODEL}"
+        return
+    fi
+
+    for model in "${MODELS[@]}"; do
+        run_sweep_for_model "${model}"
+    done
 }
 
 if [[ "${MODE}" == "submit" ]]; then
-    submit_job
+    if [[ -z "${SCRATCH:-}" ]]; then
+        echo "Error: SCRATCH is not set." >&2
+        exit 1
+    fi
+    if [[ -z "${ENV_DIR}" ]]; then
+        echo "Error: ENV_DIR is not set." >&2
+        exit 1
+    fi
+
+    mkdir -p "${REPO_ROOT}/logs/slurm"
+    cd "${REPO_ROOT}"
+
+    for model in "${MODELS[@]}"; do
+        submit "${model}"
+    done
 else
     run_sweep
 fi
