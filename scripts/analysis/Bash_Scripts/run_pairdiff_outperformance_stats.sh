@@ -19,32 +19,14 @@
 #
 # Usage
 #   source ../envs/llm-code-correctness/bin/activate
-#   ./scripts/analysis/run_pairdiff_outperformance_stats.sh
+#   ./scripts/analysis/Bash_Scripts/run_pairdiff_outperformance_stats.sh
 #
-# Environment variables
-#   LAYERS              layer selection mode (default: top-percentile)
-#   PERCENTILE          percentile threshold (default: 90)
-#   COSINE_OUTPUT_DIR   root with per-fold summary.json files
+
 # =============================================================================
 set -euo pipefail
 
-# Cross-fold statistics for layers that beat the best val_acc layer on cosine similarity.
-#
-# Usage:
-#   source ../envs/llm-code-correctness/bin/activate
-#   ./scripts/analysis/run_pairdiff_outperformance_stats.sh
-#
-# Optional environment variables:
-#   PYTHON: python interpreter (default: python3)
-#   MODELS: space-separated model names
-#   BENCHMARK: benchmark name (default: bigcodebench)
-#   SPLIT: data split (default: test)
-#   FOLDS: space-separated fold indices (default: 0 1 2 3 4 5 6 7 8 9)
-#   LAYERS: layer selection mode (default: top-percentile)
-#   PERCENTILE: percentile when LAYERS=top-percentile (default: 90)
-#   COSINE_OUTPUT_DIR: root with per-fold summary.json files
 
-ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$ROOT_DIR"
 export PYTHONPATH="$ROOT_DIR/scripts/analysis:$ROOT_DIR"
 

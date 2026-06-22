@@ -188,12 +188,16 @@ def load_fold_result_metrics_from_row(
             f"Check --results-root and CSV metadata columns"
         )
     data = json.loads(results_path.read_text())
-    if "test_per_layer" not in data or "val_per_layer" not in data:
-        raise KeyError(f"results.json missing per-layer accuracy fields: {results_path}")
-    return {
-        "test": {int(layer): metrics for layer, metrics in data["test_per_layer"].items()},
-        "val": {int(layer): metrics for layer, metrics in data["val_per_layer"].items()},
+    if "val_per_layer" not in data:
+        raise KeyError(f"results.json missing val_per_layer field: {results_path}")
+    metrics: Dict[str, Dict[int, Dict[str, float]]] = {
+        "val": {int(layer): layer_metrics for layer, layer_metrics in data["val_per_layer"].items()},
     }
+    if "test_per_layer" in data:
+        metrics["test"] = {
+            int(layer): layer_metrics for layer, layer_metrics in data["test_per_layer"].items()
+        }
+    return metrics
 
 
 def load_selected_layer_from_row(row: Dict[str, str], results_root: Path) -> int:

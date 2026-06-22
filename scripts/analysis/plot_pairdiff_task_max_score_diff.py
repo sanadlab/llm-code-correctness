@@ -43,10 +43,7 @@ from __future__ import annotations
 import csv
 import logging
 from dataclasses import replace
-from typing import Dict, List, Tuple
-
-import torch
-import torch.nn.functional as F
+from typing import Dict, List, Sequence, Tuple
 
 from plot_pairdiff_reading_cosine import (
     compute_task_pairs,
@@ -104,6 +101,9 @@ def compute_pairdiff_task_max_entries(
     detailed_layers: List[int],
     task_groups: Dict[str, List[Tuple[str, int]]],
 ) -> List[Dict[str, object]]:
+    import torch
+    import torch.nn.functional as F
+
     acts = bundle[args.representation]
     if acts.dim() != 3:
         raise ValueError(f"Unexpected acts shape {tuple(acts.shape)}: expected [N, num_layers+1, hidden_dim]")
@@ -211,10 +211,7 @@ def write_csv(entries: List[Dict[str, object]], path) -> None:
         writer.writerows(entries)
 
 
-def main() -> None:
-    args = parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
+def process_fold(args: Args) -> Path:
     bundle = load_bundle(args)
     if args.representation not in bundle.acts:
         raise KeyError(
@@ -232,7 +229,8 @@ def main() -> None:
         replace(args, layers=csv_layer_spec), direction, metrics
     )
     logger.info(
-        "Plot layers: %s | CSV layers: %s | experiment selected layer: %s",
+        "[fold %s] plot layers: %s | CSV layers: %s | experiment selected layer: %s",
+        args.fold,
         plot_layers,
         csv_layers,
         experiment_selected,
@@ -244,8 +242,20 @@ def main() -> None:
     out_dir = build_output_dir(args)
     csv_path = out_dir / "pairdiff_task_max_cosine.csv"
     write_csv(entries, csv_path)
-    logger.info("Wrote CSV to %s", csv_path)
-    logger.info("Wrote outputs to %s", out_dir)
+    logger.info("[fold %s] wrote CSV to %s", args.fold, csv_path)
+    return csv_path
+
+
+def main() -> None:
+    args = parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    folds: Sequence[int] = args.folds if args.folds is not None else [args.fold]
+    for fold in folds:
+        logger.info("Processing fold %s", fold)
+        process_fold(replace(args, fold=fold))
+
+    logger.info("Finished %s fold(s)", len(folds))
 
 
 if __name__ == "__main__":

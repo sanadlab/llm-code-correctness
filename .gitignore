@@ -4,6 +4,7 @@ init.txt
 # Generated data and outputs
 data/
 outputs/
+results_icse26_val_1_4/
 dataset/bigcodebench/frozen.jsonl
 dataset/bigcodebench/intermediate/*/
 # Ignore all top-level .jsonl files in intermediate, but not .jsonl.zst

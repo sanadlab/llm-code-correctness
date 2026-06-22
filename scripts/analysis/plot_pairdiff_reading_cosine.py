@@ -99,6 +99,7 @@ class Args:
     results_root: Path
     model: str
     dataset_source: str
+    vectors_dataset_source: str
     benchmark: str
     distribution: str
     split: str
@@ -128,7 +129,20 @@ def parse_args() -> Args:
     parser.add_argument("--vectors-root", default="vectors")
     parser.add_argument("--results-root", default="results")
     parser.add_argument("--model", required=True)
-    parser.add_argument("--dataset-source", default="icse26")
+    parser.add_argument(
+        "--dataset-source",
+        default="icse26",
+        help="Split family for hidden states and results (e.g. icse26_val_1_4).",
+    )
+    parser.add_argument(
+        "--vectors-dataset-source",
+        default=None,
+        help=(
+            "Split family for direction vectors in vectors/ "
+            "(default: same as --dataset-source). "
+            "For icse26_val_1_4, use icse26."
+        ),
+    )
     parser.add_argument("--benchmark", required=True)
     parser.add_argument("--distribution", default="id")
     parser.add_argument("--split", default="test")
@@ -185,12 +199,14 @@ def parse_args() -> Args:
     )
     parser.add_argument("--output-dir", default="outputs/phase2_task2_cosine")
     args = parser.parse_args()
+    vectors_dataset_source = args.vectors_dataset_source or args.dataset_source
     return Args(
         hidden_states_root=Path(args.hidden_states_root),
         vectors_root=Path(args.vectors_root),
         results_root=Path(args.results_root),
         model=args.model,
         dataset_source=args.dataset_source,
+        vectors_dataset_source=vectors_dataset_source,
         benchmark=args.benchmark,
         distribution=args.distribution,
         split=args.split,
@@ -236,7 +252,7 @@ def load_bundle(args: Args) -> HiddenStateBundle:
 def load_direction(args: Args) -> Direction:
     common = vector_common_path(
         args.model,
-        args.dataset_source,
+        args.vectors_dataset_source,
         args.benchmark,
         args.distribution,
         args.method,
@@ -247,7 +263,8 @@ def load_direction(args: Args) -> Direction:
     if not direction_path.exists():
         raise FileNotFoundError(
             f"Direction file not found: {direction_path}\n"
-            f"Check --vectors-root, --model, --dataset-source, --benchmark, --distribution, --method, --fit-framing, --representation, --fold"
+            f"Check --vectors-root, --vectors-dataset-source, --model, --benchmark, "
+            f"--distribution, --method, --fit-framing, --representation, --fold"
         )
     return Direction.load(direction_path)
 
@@ -299,14 +316,18 @@ def load_fold_result_metrics(args: Args, fold: int) -> Dict[str, Dict[int, Dict[
             f"Check --results-root, --model, --dataset-source, --benchmark, --distribution, --method, --fit-framing, --val-framing, --test-framing, --representation, --fold"
         )
     data = json.loads(results_path.read_text())
-    if "test_per_layer" not in data or "val_per_layer" not in data:
+    if "val_per_layer" not in data:
         raise KeyError(
-            f"results.json missing per-layer accuracy fields: {results_path}"
+            f"results.json missing val_per_layer field: {results_path}"
         )
-    return {
-        "test": {int(layer): metrics for layer, metrics in data["test_per_layer"].items()},
-        "val": {int(layer): metrics for layer, metrics in data["val_per_layer"].items()},
+    metrics: Dict[str, Dict[int, Dict[str, float]]] = {
+        "val": {int(layer): layer_metrics for layer, layer_metrics in data["val_per_layer"].items()},
     }
+    if "test_per_layer" in data:
+        metrics["test"] = {
+            int(layer): layer_metrics for layer, layer_metrics in data["test_per_layer"].items()
+        }
+    return metrics
 
 
 def _smooth_density(values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:

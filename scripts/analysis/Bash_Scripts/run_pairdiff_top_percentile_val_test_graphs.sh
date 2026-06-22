@@ -18,7 +18,7 @@
 #
 # Usage
 #   source ../envs/llm-code-correctness/bin/activate
-#   ./scripts/analysis/run_pairdiff_top_percentile_val_test_graphs.sh
+#   ./scripts/analysis/Bash_Scripts/run_pairdiff_top_percentile_val_test_graphs.sh
 #
 # Environment variables
 #   HIDDEN_STATES_ROOT  hidden states root (default: ../hidden_states_sohaila)
@@ -32,7 +32,7 @@ set -euo pipefail
 #
 # Usage:
 #   source ../envs/llm-code-correctness/bin/activate
-#   ./scripts/analysis/run_pairdiff_top_percentile_val_test_graphs.sh
+#   ./scripts/analysis/Bash_Scripts/run_pairdiff_top_percentile_val_test_graphs.sh
 #
 # Optional environment variables:
 #   HIDDEN_STATES_ROOT: path to hidden states directory (default: ./../hidden_states_sohaila)
@@ -43,11 +43,11 @@ set -euo pipefail
 #   FOLDS: space-separated list of folds (default: 0 1 2 3 4 5 6 7 8 9)
 #   PERCENTILE: percentile threshold for top layer selection (default: 90)
 
-ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$ROOT_DIR"
 export PYTHONPATH="$ROOT_DIR"
 
-HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-./../hidden_states_sohaila}"
+HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-../hidden_states_sohaila}"
 PYTHON="${PYTHON:-python3}"
 MODELS=(
   "Qwen/Qwen2.5-Coder-7B-Instruct"

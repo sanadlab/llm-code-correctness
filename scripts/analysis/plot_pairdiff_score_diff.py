@@ -54,7 +54,6 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -119,11 +118,30 @@ def parse_args() -> Args:
     parser.add_argument("--vectors-root", default="vectors")
     parser.add_argument("--results-root", default="results")
     parser.add_argument("--model", required=True)
-    parser.add_argument("--dataset-source", default="icse26")
+    parser.add_argument(
+        "--dataset-source",
+        default="icse26",
+        help="Split family for hidden states and results (e.g. icse26_val_1_4).",
+    )
+    parser.add_argument(
+        "--vectors-dataset-source",
+        default=None,
+        help=(
+            "Split family for direction vectors in vectors/ "
+            "(default: same as --dataset-source). For icse26_val_1_4, use icse26."
+        ),
+    )
     parser.add_argument("--benchmark", required=True)
     parser.add_argument("--distribution", default="id")
     parser.add_argument("--split", default="test")
     parser.add_argument("--fold", type=int, default=0)
+    parser.add_argument(
+        "--folds",
+        nargs="+",
+        type=int,
+        default=None,
+        help="Process multiple folds in one run (imports torch once). Overrides --fold.",
+    )
     parser.add_argument("--framing", default="neutral")
     parser.add_argument("--representation", default="response_avg")
     parser.add_argument("--method", default="mean_diff")
@@ -154,12 +172,14 @@ def parse_args() -> Args:
     )
     parser.add_argument("--output-dir", default="outputs/phase2_task2_score_diff")
     args = parser.parse_args()
+    vectors_dataset_source = args.vectors_dataset_source or args.dataset_source
     return Args(
         hidden_states_root=Path(args.hidden_states_root),
         vectors_root=Path(args.vectors_root),
         results_root=Path(args.results_root),
         model=args.model,
         dataset_source=args.dataset_source,
+        vectors_dataset_source=vectors_dataset_source,
         benchmark=args.benchmark,
         distribution=args.distribution,
         split=args.split,
@@ -175,6 +195,7 @@ def parse_args() -> Args:
         output_dir=Path(args.output_dir),
         percentile=args.percentile,
         csv_layers=args.csv_layers,
+        folds=args.folds,
     )
 
 
@@ -462,8 +483,10 @@ def plot_layers_overlay_with_score_markers(
     out_dir: Path,
     experiment_selected_layer: int,
 ) -> None:
-    test_metrics = metrics["test"]
+    import matplotlib.pyplot as plt
+
     val_metrics = metrics["val"]
+    test_metrics = metrics.get("test")
     selected_layers = sorted({int(entry["layer"]) for entry in entries})
     if not selected_layers:
         logger.warning("No layers selected for score-diff plot for fold %s", args.fold)
@@ -494,11 +517,16 @@ def plot_layers_overlay_with_score_markers(
         color = colors[i % len(colors)] if colors else None
         line_width = 3.0 if layer == experiment_selected_layer else 1.5
         cosine_sim_mean = float(np.mean(values))
-        val_acc = val_metrics.get(layer, {}).get("pairwise_acc", float("nan"))
-        test_acc = test_metrics.get(layer, {}).get("one_of_4", float("nan"))
-        label_text = (
-            f"layer {layer} ({cosine_sim_mean:.3f} | {val_acc:.3f} | {test_acc:.3f})"
-        )
+        val_acc = val_metrics.get(layer, {}).get("one_of_4")
+        if val_acc is None:
+            val_acc = val_metrics.get(layer, {}).get("pairwise_acc", float("nan"))
+        if test_metrics is not None:
+            test_acc = test_metrics.get(layer, {}).get("one_of_4", float("nan"))
+            label_text = (
+                f"layer {layer} ({cosine_sim_mean:.3f} | val {val_acc:.3f} | test {test_acc:.3f})"
+            )
+        else:
+            label_text = f"layer {layer} ({cosine_sim_mean:.3f} | val {val_acc:.3f})"
         if layer == experiment_selected_layer:
             label_text += " <SELECTED>"
         ax.plot(bin_centers, smooth, label=label_text, color=color, linewidth=line_width)
@@ -546,17 +574,34 @@ def plot_layers_overlay_with_score_markers(
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s: %(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
+    logger.info("Entering plot_pairdiff_score_diff main()")
     args = parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    logger.info(
+        "model=%s benchmark=%s split=%s fold=%s dataset_source=%s",
+        args.model,
+        args.benchmark,
+        args.split,
+        args.fold,
+        args.dataset_source,
+    )
 
+    logger.info("Loading bundle...")
     bundle = load_bundle(args)
     if args.representation not in bundle.acts:
         raise KeyError(
             f"Representation {args.representation!r} not found in bundle acts. Available: {list(bundle.acts)}"
         )
     direction = load_direction(args)
+    logger.info("Loading detailed scores...")
     detailed_layers, score_map = load_detailed_scores(args)
 
+    logger.info("Loading fold result metrics...")
     metrics = load_fold_result_metrics(args, args.fold)
     experiment_selected = load_selected_layer(args)
     plot_layers = resolve_analysis_layers(args, direction, metrics)
@@ -574,6 +619,7 @@ def main() -> None:
     entries = compute_pairdiff_entries(
         args, bundle, direction, csv_layers, score_map, detailed_layers
     )
+    logger.info("Computed %s pairdiff entries", len(entries))
     out_dir = build_output_dir(args)
     csv_path = out_dir / "pairdiff_score_diff_cosine.csv"
     write_csv(entries, csv_path)
@@ -587,4 +633,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    print("[plot_pairdiff_score_diff] Launching main()...", flush=True)
     main()

@@ -377,6 +377,32 @@ def one_of_n_accuracy(scores: torch.Tensor, labels: torch.Tensor, task_ids: List
     return hits / len(by_task) if by_task else float("nan")
 
 
+def per_layer_split_metrics(
+    scores_all: torch.Tensor,
+    layers: Sequence[int],
+    labels: torch.Tensor,
+    task_ids: List[str],
+) -> Dict[int, Dict[str, float]]:
+    """Per-layer pairwise and 1-of-N accuracy for one projected split."""
+    per_layer: Dict[int, Dict[str, float]] = {}
+    for j, layer in enumerate(layers):
+        col = scores_all[:, j]
+        per_layer[layer] = {
+            "one_of_4": one_of_n_accuracy(col, labels, task_ids),
+            "pairwise_acc": pairwise_accuracy(col, labels, task_ids),
+        }
+    return per_layer
+
+
+def select_layer_by_metric(
+    per_layer: Dict[int, Dict[str, float]],
+    metric: str = "pairwise_acc",
+) -> int:
+    """Pick the deepest layer (highest index) on ties, matching paper behavior."""
+    ordered = sorted(per_layer.keys(), reverse=True)
+    return max(ordered, key=lambda layer: (per_layer[layer][metric], layer))
+
+
 # ---------------------------------------------------------------------------
 # Cross-validation driver
 # ---------------------------------------------------------------------------
@@ -413,6 +439,7 @@ def run_cross_validation(
     dtype: str = "float16",
     max_length_meta: int = None,
     experiment_script: str = "",
+    layer_selection_metric: str = "pairwise_acc",
 ) -> List[dict]:
     """Run the standard per-fold fit→layer-select→test loop.
 
@@ -467,42 +494,34 @@ def run_cross_validation(
         # Per-layer val scores.
         acts_val = representation.select(bundle_val)
         layers, val_scores_all = project_all_layers(direction, acts_val)  # [N_val, L]
-        val_per_layer: Dict[int, float] = {}
-        for j, layer in enumerate(layers):
-            val_per_layer[layer] = pairwise_accuracy(
-                val_scores_all[:, j], bundle_val.labels, bundle_val.task_ids
-            )
-        # Paper iterates hidden_layers = range(-1, -N, -1) and picks max via
-        # `max(results, key=lambda x: x["accuracy"])`. Python's max returns the
-        # FIRST item on ties, so paper effectively picks the DEEPEST layer
-        # (closest to -1) on ties. Replicate by iterating our positive layers
-        # from N down to 2.
-        ordered = sorted(val_per_layer.keys(), reverse=True)
-        selected_layer = max(ordered, key=lambda l: val_per_layer[l])
+        val_per_layer = per_layer_split_metrics(
+            val_scores_all, layers, bundle_val.labels, bundle_val.task_ids
+        )
+        selected_layer = select_layer_by_metric(val_per_layer, layer_selection_metric)
+        sel_val = val_per_layer[selected_layer]
         print(f"[fold {fold}] selected layer = {selected_layer} "
-              f"(val pairwise acc = {val_per_layer[selected_layer]:.3f})")
+              f"(val {layer_selection_metric} = {sel_val[layer_selection_metric]:.3f}, "
+              f"val one_of_4 = {sel_val['one_of_4']:.3f})")
 
         # Per-layer test scores.
         acts_test = representation.select(bundle_test)
         _, test_scores_all = project_all_layers(direction, acts_test)  # [N_test, L]
-        test_per_layer: Dict[int, Dict[str, float]] = {}
-        for j, layer in enumerate(layers):
-            col = test_scores_all[:, j]
-            test_per_layer[layer] = {
-                "one_of_4": one_of_n_accuracy(col, bundle_test.labels, bundle_test.task_ids),
-                "pairwise_acc": pairwise_accuracy(col, bundle_test.labels, bundle_test.task_ids),
-            }
+        test_per_layer = per_layer_split_metrics(
+            test_scores_all, layers, bundle_test.labels, bundle_test.task_ids
+        )
         sel_test = test_per_layer[selected_layer]
         print(f"[fold {fold}] test 1-of-4 = {sel_test['one_of_4']:.3f}  "
               f"test pairwise = {sel_test['pairwise_acc']:.3f}")
 
         # Theoretical-best layer on test (for reference; not used for selection).
-        best_layer = max(test_per_layer, key=lambda k: test_per_layer[k]["one_of_4"])
+        best_layer = select_layer_by_metric(test_per_layer, "one_of_4")
 
         per_fold.append({
             "fold": fold,
             "selected_layer": selected_layer,
-            "val_pairwise_acc": val_per_layer[selected_layer],
+            "layer_selection_metric": layer_selection_metric,
+            "val_pairwise_acc": sel_val["pairwise_acc"],
+            "val_one_of_4": sel_val["one_of_4"],
             "test_one_of_4": sel_test["one_of_4"],
             "test_pairwise": sel_test["pairwise_acc"],
         })
@@ -559,8 +578,10 @@ def run_cross_validation(
             results = {
                 "fold": fold,
                 "selected_layer": selected_layer,
-                "val_per_layer": {str(k): {"pairwise_acc": v} for k, v in val_per_layer.items()},
+                "layer_selection_metric": layer_selection_metric,
+                "val_per_layer": {str(k): v for k, v in val_per_layer.items()},
                 "test_per_layer": {str(k): v for k, v in test_per_layer.items()},
+                "val_at_selected_layer": dict(sel_val),
                 "test_at_selected_layer": dict(sel_test),
                 "test_theoretical_best_layer": {
                     "layer": best_layer,
@@ -600,10 +621,12 @@ def run_cross_validation(
         torch.cuda.empty_cache() if torch.cuda.is_available() else None
 
     if per_fold:
-        mean_1of4 = sum(x["test_one_of_4"] for x in per_fold) / len(per_fold)
-        mean_pair = sum(x["test_pairwise"] for x in per_fold) / len(per_fold)
-        print(f"\n[summary] mean test 1-of-4 = {mean_1of4:.3f}  "
-              f"mean test pairwise = {mean_pair:.3f}  (n_folds={len(per_fold)})")
+        mean_val_1of4 = sum(x["val_one_of_4"] for x in per_fold) / len(per_fold)
+        mean_test_1of4 = sum(x["test_one_of_4"] for x in per_fold) / len(per_fold)
+        mean_test_pair = sum(x["test_pairwise"] for x in per_fold) / len(per_fold)
+        print(f"\n[summary] mean val 1-of-4 = {mean_val_1of4:.3f}  "
+              f"mean test 1-of-4 = {mean_test_1of4:.3f}  "
+              f"mean test pairwise = {mean_test_pair:.3f}  (n_folds={len(per_fold)})")
 
     print("\nPer-fold:")
     for x in per_fold:
