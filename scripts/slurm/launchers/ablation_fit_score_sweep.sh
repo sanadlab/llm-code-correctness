@@ -14,7 +14,10 @@
 # Usage:
 #   bash scripts/slurm/launchers/ablation_fit_score_sweep.sh [--dry-run]
 #   MODELS="model/a model/b" bash scripts/slurm/launchers/ablation_fit_score_sweep.sh
-#   MODEL="Qwen/Qwen2.5-Coder-7B-Instruct" bash scripts/slurm/launchers/ablation_fit_score_sweep.sh --local
+#   MODEL="Qwen/..." bash scripts/slurm/launchers/ablation_fit_score_sweep.sh --local
+#
+# By default, skips combinations whose results.json files are already complete
+# (--skip-existing). Pass --no-skip-existing to force a full re-run.
 
 set -euo pipefail
 
@@ -53,13 +56,17 @@ DATA_ROOT="${DATA_ROOT:-dataset/icse26}"
 
 MODE="submit"
 DRY_RUN=0
+SKIP_EXISTING=1
+FIT_SCORE_SCRIPT="${REPO_ROOT}/scripts/experiments/fit_and_score_from_cache.py"
 for arg in "$@"; do
     case "${arg}" in
         --local) MODE="local" ;;
         --dry-run) DRY_RUN=1 ;;
+        --skip-existing) SKIP_EXISTING=1 ;;
+        --no-skip-existing) SKIP_EXISTING=0 ;;
         *)
             echo "Unknown option: ${arg}" >&2
-            echo "Usage: $0 [--local | --dry-run]" >&2
+            echo "Usage: $0 [--local | --dry-run | --skip-existing | --no-skip-existing]" >&2
             exit 1
             ;;
     esac
@@ -119,7 +126,7 @@ run_sweep_for_model() {
                     for FIT_SOURCE in "${FIT_SOURCES[@]}"; do
                         for TEST_DATASET in "${TEST_DATASETS[@]}"; do
                             n=$((n + 1))
-                            local -a cmd=(python -u scripts/experiments/fit_and_score_from_cache.py
+                            local -a cmd=(python -u "${FIT_SCORE_SCRIPT}"
                                 --model "${model}"
                                 --representation "${REP}"
                                 --method "${METHOD}"
@@ -130,6 +137,9 @@ run_sweep_for_model() {
                                 --hidden-states-root "${HIDDEN_STATES_ROOT}"
                                 --results-dir "${RESULTS_DIR}"
                                 --data-root "${DATA_ROOT}")
+                            if [[ "${SKIP_EXISTING}" -eq 1 ]]; then
+                                cmd+=(--skip-existing)
+                            fi
                             echo "[${n}] ${cmd[*]}"
                             if [[ "${DRY_RUN}" -eq 0 ]]; then
                                 "${cmd[@]}"
