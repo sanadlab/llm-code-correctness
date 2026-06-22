@@ -145,6 +145,14 @@ def output_stem(data_split: str) -> str:
     raise ValueError(f"unsupported data_split: {data_split!r}")
 
 
+def output_split_subdir(data_split: str) -> str:
+    if data_split == "test":
+        return "test"
+    if data_split == "validate":
+        return "validate"
+    raise ValueError(f"unsupported data_split: {data_split!r}")
+
+
 def aggregate_layers_across_cells(
     per_cell: Mapping[str, np.ndarray],
 ) -> Tuple[np.ndarray, np.ndarray, List[int]]:
@@ -250,9 +258,19 @@ def _load_bundle_for_cell(
     )
 
 
-def _build_output_dir(output_root: Path, split_family: str, benchmark: str) -> Path:
+def _build_output_dir(
+    output_root: Path,
+    split_family: str,
+    benchmark: str,
+    data_split: str,
+) -> Path:
     origin_parts = viz_output_path_parts(split_family)
-    out_dir = output_root / Path(*origin_parts) / benchmark
+    out_dir = (
+        output_root
+        / Path(*origin_parts)
+        / benchmark
+        / output_split_subdir(data_split)
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
 
@@ -562,7 +580,12 @@ def plot_models(
     if not model_summaries:
         raise ValueError("plot_models: no model summaries provided")
 
-    out_dir = _build_output_dir(output_dir, split_family=split_family, benchmark=benchmark)
+    out_dir = _build_output_dir(
+        output_dir,
+        split_family=split_family,
+        benchmark=benchmark,
+        data_split=data_split,
+    )
     stem = output_stem(data_split)
     png_path = out_dir / f"{stem}.png"
     json_path = out_dir / f"{stem}.json"
