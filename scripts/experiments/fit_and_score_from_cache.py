@@ -4,8 +4,8 @@ This is the cheap half of the large-scale ablation: `cache_hidden_states.py`
 does the expensive part (model forward passes) once per (model,
 split_family, dataset, fold, data_split, framing, representation) cell, and
 this script reuses those cached bundles to fit+score every
-(method, representation, fit_framing, val_framing, fit_source, test_dataset)
-combination without touching the model.
+(method, representation, fit_framing, val_framing, test_framing, fit_source,
+test_dataset) combination without touching the model.
 
 Two fit sources:
   in-domain: fit/validate/test all come from the same dataset's folds
@@ -19,7 +19,7 @@ Usage:
     python scripts/experiments/fit_and_score_from_cache.py \\
         --model Qwen/Qwen2.5-Coder-7B-Instruct \\
         --representation response_avg --method mean_diff \\
-        --fit-framing function --val-framing neutral \\
+        --fit-framing function --val-framing neutral --test-framing neutral \\
         --fit-source in-domain --test-dataset bigcodebench
 """
 
@@ -73,7 +73,23 @@ def _load_bundle(
             f"missing cached bundle: {bundle_path} "
             "(run scripts/extract/cache_hidden_states.py first)"
         )
-    return HiddenStateBundle.load(bundle_path)
+    return HiddenStateBundle.load(bundle_path), out_dir
+
+
+def _assert_representation(bundle: HiddenStateBundle, bundle_dir: Path, representation) -> None:
+    """Verify the requested representation exists inside bundle.pt."""
+    try:
+        representation.select(bundle)
+        return
+    except KeyError as exc:
+        meta_path = bundle_dir / "metadata.json"
+        meta_reps: List[str] = []
+        if meta_path.is_file():
+            meta_reps = json.loads(meta_path.read_text()).get("representations", [])
+        raise KeyError(
+            f"{exc} at {bundle_dir / 'bundle.pt'}"
+            + (f"; metadata.json lists {meta_reps!r}" if meta_reps else "")
+        ) from exc
 
 
 def _fit_and_select(
@@ -118,27 +134,6 @@ def _score_test(direction, layers, representation, bundle_test: HiddenStateBundl
     return test_per_layer
 
 
-def _result_path(
-    results_dir: Path,
-    common_path: str,
-    eval_segment: str,
-    cell_name: str,
-) -> Path:
-    return results_dir / common_path / eval_segment / cell_name / "results.json"
-
-
-def _combo_is_complete(
-    results_dir: Path,
-    common_path: str,
-    eval_segment: str,
-    cell_names: List[str],
-) -> bool:
-    return all(
-        _result_path(results_dir, common_path, eval_segment, name).is_file()
-        for name in cell_names
-    )
-
-
 def _write_results(
     results_dir: Path,
     common_path: str,
@@ -146,7 +141,7 @@ def _write_results(
     cell_name: str,
     payload: dict,
 ) -> None:
-    res_dir = _result_path(results_dir, common_path, eval_segment, cell_name).parent
+    res_dir = Path(results_dir) / common_path / eval_segment / cell_name
     res_dir.mkdir(parents=True, exist_ok=True)
     with open(res_dir / "results.json", "w") as f:
         json.dump(payload, f, indent=2)
@@ -158,23 +153,26 @@ def run_in_domain(args, representation, method) -> List[dict]:
         f"{safe_model_dir(args.model)}/{split_family}/{args.test_dataset}/id/"
         f"{method.name}/{args.fit_framing}/{representation.name}"
     )
-    eval_segment = f"val={args.val_framing}__test={args.val_framing}"
+    eval_segment = f"val={args.val_framing}__test={args.test_framing}"
 
     folds = args.folds or list(range(_num_folds(Path(args.data_root), args.test_dataset)))
     per_fold = []
     for fold in folds:
-        bundle_fit = _load_bundle(
+        bundle_fit, fit_dir = _load_bundle(
             args.hidden_states_root, args.model, split_family, args.test_dataset,
             "id", "fit", args.fit_framing, fold, "fold",
         )
-        bundle_val = _load_bundle(
+        _assert_representation(bundle_fit, fit_dir, representation)
+        bundle_val, val_dir = _load_bundle(
             args.hidden_states_root, args.model, split_family, args.test_dataset,
             "id", "validate", args.val_framing, fold, "fold",
         )
-        bundle_test = _load_bundle(
+        _assert_representation(bundle_val, val_dir, representation)
+        bundle_test, test_dir = _load_bundle(
             args.hidden_states_root, args.model, split_family, args.test_dataset,
-            "id", "test", args.val_framing, fold, "fold",
+            "id", "test", args.test_framing, fold, "fold",
         )
+        _assert_representation(bundle_test, test_dir, representation)
 
         direction, layers, val_per_layer, selected_layer = _fit_and_select(
             bundle_fit, bundle_val, representation, method
@@ -205,7 +203,7 @@ def run_in_domain(args, representation, method) -> List[dict]:
                     "representation": representation.name,
                     "fit_framing": args.fit_framing,
                     "val_framing": args.val_framing,
-                    "test_framing": args.val_framing,
+                    "test_framing": args.test_framing,
                     "git_commit": git_commit(),
                     "experiment_script": "scripts/experiments/fit_and_score_from_cache.py",
                 },
@@ -219,31 +217,34 @@ def run_ood(args, representation, method) -> List[dict]:
         f"{safe_model_dir(args.model)}/{split_family}/{args.test_dataset}/id/"
         f"{method.name}/{args.fit_framing}/{representation.name}"
     )
-    eval_segment = f"val={args.val_framing}__test={args.val_framing}"
+    eval_segment = f"val={args.val_framing}__test={args.test_framing}"
 
     inner_folds = args.inner_folds or list(range(_num_folds(Path(args.data_root), args.fit_source)))
     outer_folds = args.outer_folds or list(range(_num_folds(Path(args.data_root), args.test_dataset)))
 
-    # Test bundles depend only on (model, test_dataset, val_framing, outer fold) —
+    # Test bundles depend only on (model, test_dataset, test_framing, outer fold) —
     # reuse across all inner folds.
-    test_bundles = {
-        outer: _load_bundle(
+    test_bundles = {}
+    for outer in outer_folds:
+        bundle_test, test_dir = _load_bundle(
             args.hidden_states_root, args.model, split_family, args.test_dataset,
-            "id", "test", args.val_framing, outer, "fold",
+            "id", "test", args.test_framing, outer, "fold",
         )
-        for outer in outer_folds
-    }
+        _assert_representation(bundle_test, test_dir, representation)
+        test_bundles[outer] = bundle_test
 
     per_cell = []
     for inner in inner_folds:
-        bundle_fit = _load_bundle(
+        bundle_fit, fit_dir = _load_bundle(
             args.hidden_states_root, args.model, split_family, args.test_dataset,
             "id", "fit", args.fit_framing, inner, "inner",
         )
-        bundle_val = _load_bundle(
+        _assert_representation(bundle_fit, fit_dir, representation)
+        bundle_val, val_dir = _load_bundle(
             args.hidden_states_root, args.model, split_family, args.test_dataset,
             "id", "validate", args.val_framing, inner, "inner",
         )
+        _assert_representation(bundle_val, val_dir, representation)
         direction, layers, val_per_layer, selected_layer = _fit_and_select(
             bundle_fit, bundle_val, representation, method
         )
@@ -277,7 +278,7 @@ def run_ood(args, representation, method) -> List[dict]:
                         "representation": representation.name,
                         "fit_framing": args.fit_framing,
                         "val_framing": args.val_framing,
-                        "test_framing": args.val_framing,
+                        "test_framing": args.test_framing,
                         "git_commit": git_commit(),
                         "experiment_script": "scripts/experiments/fit_and_score_from_cache.py",
                     },
@@ -292,7 +293,9 @@ def main():
     parser.add_argument("--method", required=True, choices=list(METHODS))
     parser.add_argument("--fit-framing", required=True, choices=["function", "neutral", "concept"])
     parser.add_argument("--val-framing", required=True, choices=["neutral", "concept"],
-                        help="Shared framing for both validate and test splits.")
+                        help="Framing for the validate split (layer selection).")
+    parser.add_argument("--test-framing", default=None, choices=["neutral", "concept"],
+                        help="Framing for the test split (default: same as --val-framing).")
     parser.add_argument("--fit-source", required=True, choices=["in-domain", "mbpp", "synthetic"])
     parser.add_argument("--test-dataset", required=True, choices=["bigcodebench", "humaneval"])
     parser.add_argument("--data-root", default="dataset/icse26")
@@ -304,42 +307,13 @@ def main():
                         help="OOD only: subset of inner (fit/val) folds (default: all).")
     parser.add_argument("--outer-folds", nargs="*", type=int, default=None,
                         help="OOD only: subset of outer (test) folds (default: all).")
-    parser.add_argument("--skip-existing", action="store_true",
-                        help="Skip if all expected results.json files already exist.")
     args = parser.parse_args()
     args.hidden_states_root = Path(args.hidden_states_root)
+    if args.test_framing is None:
+        args.test_framing = args.val_framing
 
     representation = REPRESENTATIONS[args.representation]
     method = METHODS[args.method]
-
-    if args.skip_existing and args.results_dir:
-        data_root = Path(args.data_root)
-        if args.fit_source == "in-domain":
-            split_family = "icse26"
-            common_path = (
-                f"{safe_model_dir(args.model)}/{split_family}/{args.test_dataset}/id/"
-                f"{method.name}/{args.fit_framing}/{representation.name}"
-            )
-            eval_segment = f"val={args.val_framing}__test={args.val_framing}"
-            folds = args.folds or list(range(_num_folds(data_root, args.test_dataset)))
-            cell_names = [f"fold_{fold}" for fold in folds]
-        else:
-            split_family = f"ood_{args.fit_source}"
-            common_path = (
-                f"{safe_model_dir(args.model)}/{split_family}/{args.test_dataset}/id/"
-                f"{method.name}/{args.fit_framing}/{representation.name}"
-            )
-            eval_segment = f"val={args.val_framing}__test={args.val_framing}"
-            inner_folds = args.inner_folds or list(range(_num_folds(data_root, args.fit_source)))
-            outer_folds = args.outer_folds or list(range(_num_folds(data_root, args.test_dataset)))
-            cell_names = [
-                f"outer_{outer}_inner_{inner}"
-                for inner in inner_folds
-                for outer in outer_folds
-            ]
-        if _combo_is_complete(Path(args.results_dir), common_path, eval_segment, cell_names):
-            print(f"[skip] results already complete for {common_path}/{eval_segment}")
-            return
 
     if args.fit_source == "in-domain":
         cells = run_in_domain(args, representation, method)

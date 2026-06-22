@@ -9,10 +9,14 @@
 
 # Ablation sweep — stage 2 (fit + score from cached hidden states).
 # CPU-only tensor math on already-cached activations; no GPU/model load.
-# Runs all 144 ablation combos for one model (see ablation_fit_score_sweep.sh).
+# Runs all (representation, method, fit-framing, val-framing) combos for one
+# model x (fit-source, test-dataset) spec (24 combos; see ablation_fit_score_sweep.sh).
 #
 # Overridable env vars (passed via --export by the launcher):
 #   MODEL              HF model id (required)
+#   FIT_SOURCE         in-domain | mbpp | synthetic (required)
+#   TEST_DATASET       bigcodebench | humaneval (required)
+#   SKIP_EXISTING      1 to skip complete combos (default: 1)
 #   HIDDEN_STATES_ROOT / RESULTS_DIR / DATA_ROOT
 #   ENV_DIR / PYTHON_MODULE / REPO_ROOT
 
@@ -25,6 +29,9 @@ if [[ -z "${REPO_ROOT}" ]]; then
 fi
 
 MODEL=${MODEL:-}
+FIT_SOURCE=${FIT_SOURCE:-}
+TEST_DATASET=${TEST_DATASET:-}
+SKIP_EXISTING=${SKIP_EXISTING:-1}
 HIDDEN_STATES_ROOT=${HIDDEN_STATES_ROOT:-hidden_states}
 RESULTS_DIR=${RESULTS_DIR:-ablation_results}
 DATA_ROOT=${DATA_ROOT:-dataset/icse26}
@@ -37,6 +44,14 @@ cd "${REPO_ROOT}"
 
 if [[ -z "${MODEL}" ]]; then
     echo "Error: MODEL is not set." >&2
+    exit 1
+fi
+if [[ -z "${FIT_SOURCE}" ]]; then
+    echo "Error: FIT_SOURCE is not set." >&2
+    exit 1
+fi
+if [[ -z "${TEST_DATASET}" ]]; then
+    echo "Error: TEST_DATASET is not set." >&2
     exit 1
 fi
 if [[ -z "${SCRATCH:-}" ]]; then
@@ -52,21 +67,29 @@ module purge
 module load "${PYTHON_MODULE}"
 source "${ENV_DIR}/bin/activate"
 
-export MODEL HIDDEN_STATES_ROOT RESULTS_DIR DATA_ROOT
+export MODEL FIT_SOURCE TEST_DATASET HIDDEN_STATES_ROOT RESULTS_DIR DATA_ROOT SKIP_EXISTING
 
 echo "======================================"
 echo "Ablation fit+score sweep (stage 2)"
 echo "======================================"
 echo "Repo:               ${REPO_ROOT}"
 echo "Model:              ${MODEL}"
+echo "Fit source:         ${FIT_SOURCE}"
+echo "Test dataset:       ${TEST_DATASET}"
 echo "Hidden states root: ${HIDDEN_STATES_ROOT}"
 echo "Results dir:        ${RESULTS_DIR}"
 echo "Data root:          ${DATA_ROOT}"
+echo "Skip existing:      ${SKIP_EXISTING}"
 echo "Host:               $(hostname)"
 echo "CPUs:               ${SLURM_CPUS_PER_TASK:-?}"
 echo "Mem:                ${SLURM_MEM_PER_NODE:-?}"
 echo "======================================"
 
-bash "${REPO_ROOT}/scripts/slurm/launchers/ablation_fit_score_sweep.sh" --local
+local_args=(--local)
+if [[ "${SKIP_EXISTING}" == "0" ]]; then
+    local_args+=(--no-skip-existing)
+fi
+
+bash "${REPO_ROOT}/scripts/slurm/launchers/ablation_fit_score_sweep.sh" "${local_args[@]}"
 
 echo "Done."
