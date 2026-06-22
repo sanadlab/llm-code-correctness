@@ -21,7 +21,7 @@ FORCE=0
 DRY_RUN=0
 
 if [[ -n "${SCRATCH:-}" ]]; then
-    ENV_DIR_DEFAULT="${SCRATCH}/envs/project-abu-dhabi"
+    ENV_DIR_DEFAULT="${SCRATCH}/envs/llm-code-correctness"
     HF_HOME_DEFAULT="${SCRATCH}/hf-models"
 else
     ENV_DIR_DEFAULT=""

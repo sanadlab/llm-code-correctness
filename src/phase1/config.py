@@ -14,7 +14,7 @@ class ValidateConfig:
     split: str = "complete"
     min_time_limit: int = 10
     parallel: int = 8
-    batch_size: int = 2000
+    batch_size: int = 250
     container_runtime: str = "docker"   # "docker" or "singularity"
     sif_path: str = ""                   # path to .sif file (required when runtime=singularity)
 

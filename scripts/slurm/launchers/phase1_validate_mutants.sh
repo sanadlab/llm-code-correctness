@@ -17,7 +17,7 @@ CPUS=16
 PARALLEL=""
 SHARDS=1
 MEM="64G"
-TIME="24:00:00"
+TIME="12:00:00"
 PYTHON_MODULE="python/3.11.3"
 FORCE=0
 RETRY_TIMEOUTS=0
@@ -25,7 +25,7 @@ RETRY_UNRESOLVED=0
 DRY_RUN=0
 
 if [[ -n "${SCRATCH:-}" ]]; then
-    ENV_DIR_DEFAULT="${SCRATCH}/envs/project-abu-dhabi"
+    ENV_DIR_DEFAULT="${SCRATCH}/envs/llm-code-correctness"
 else
     ENV_DIR_DEFAULT=""
 fi
@@ -57,6 +57,14 @@ Options:
         --retry-unresolved      Keep existing pass/fail rows and revalidate prior timeout rows plus missing rows
   --dry-run               Print sbatch command without submitting
   --help                  Show this help
+
+Recommended for the full subset (~380k mutants):
+  --cpus 16 --parallel 8 --mem 64G --time 48:00:00
+  Keep batch_size at 250 in configs/phase1/bigcodebench.yaml (or lower).
+  Use --shards N to spread work across N nodes when queue allows.
+
+Priority cs partition (optional):
+  --partition cs --account condo_cs_nadi
 EOF
 }
 

@@ -231,10 +231,12 @@ pull-eval-image:
 		echo "Error: SCRATCH is not set. Export SCRATCH or pass SIF_PATH explicitly."; \
 		exit 1; \
 	fi
-	@mkdir -p "$(dir $(SIF_PATH))"
+	@mkdir -p "$(dir $(SIF_PATH))" "$(SCRATCH)/.singularity/cache"
 	@if [ -f "$(SIF_PATH)" ]; then \
 		echo "SIF already exists: $(SIF_PATH)"; \
 	else \
 		echo "Pulling bigcodebench-evaluate image -> $(SIF_PATH) ..."; \
+		SINGULARITY_CACHEDIR="$(SCRATCH)/.singularity/cache" \
+		APPTAINER_CACHEDIR="$(SCRATCH)/.singularity/cache" \
 		singularity pull "$(SIF_PATH)" docker://bigcodebench/bigcodebench-evaluate:latest; \
 	fi

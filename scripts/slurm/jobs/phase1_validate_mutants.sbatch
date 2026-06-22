@@ -14,11 +14,15 @@ fi
 CONFIG=${CONFIG:-configs/phase1/bigcodebench.yaml}
 STEP=${STEP:-validate_mutants}
 PYTHON_MODULE=${PYTHON_MODULE:-python/3.11.3}
-ENV_DIR=${ENV_DIR:-${SCRATCH:-}/envs/project-abu-dhabi}
+ENV_DIR=${ENV_DIR:-${SCRATCH:-}/envs/llm-code-correctness}
 FORCE=${FORCE:-0}
-VALIDATE_PARALLEL=${VALIDATE_PARALLEL:-}
 VALIDATE_NUM_SHARDS=${VALIDATE_NUM_SHARDS:-1}
 VALIDATE_RESUME_MODE=${VALIDATE_RESUME_MODE:-all_missing}
+# Default eval parallelism to half the allocated CPUs (matches config parallel: 8 @ 16 CPUs).
+if [[ -z "${VALIDATE_PARALLEL:-}" ]]; then
+    VALIDATE_PARALLEL=$(( ${SLURM_CPUS_PER_TASK:-16} / 2 ))
+fi
+export VALIDATE_PARALLEL
 
 if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
     VALIDATE_SHARD_INDEX=${VALIDATE_SHARD_INDEX:-${SLURM_ARRAY_TASK_ID}}
