@@ -3,7 +3,7 @@
 #SBATCH --output=logs/slurm/ablation_cache.%j.out
 #SBATCH --error=logs/slurm/ablation_cache.%j.err
 #SBATCH --partition=nvidia
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=04:00:00

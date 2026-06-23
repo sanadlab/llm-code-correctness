@@ -75,6 +75,8 @@ logs/
 /results/split_analysis/pair_metrics.csv
 /visualizations/
 /ablation_results/
+/relevant_ablation_results/
+/fixed_ablation_results/
 
 # Code-reorg experiment raw outputs (tracked as compressed archives instead)
 code-reorg-results/

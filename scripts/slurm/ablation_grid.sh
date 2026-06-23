@@ -47,3 +47,32 @@ ABLATION_COMBOS_PER_SPEC=$(( \
     * ${#ABLATION_VAL_FRAMINGS[@]} \
     * ${#ABLATION_TEST_FRAMINGS[@]} \
 ))
+
+# Stage 2 "relevant" sweep (ablation_fit_score_relevant.sbatch): skip response_avg
+# whenever concept framing appears on fit, validate, or test. Concept + response_avg
+# yields zero activations because the probe stem is part of the prompt slice, not the
+# response slice; use sequence_last for concept instead.
+#
+# Kept response_avg combos: fit in {function, neutral} with val=neutral and
+# test=neutral only -> 2 per method -> 4 per spec. sequence_last keeps all 24.
+# Total relevant combos per spec: 4 + 24 = 28.
+ablation_skip_irrelevant_combo() {
+    local rep="$1" fit="$2" val="$3" test="$4"
+    if [[ "${rep}" == "response_avg" ]]; then
+        if [[ "${fit}" == "concept" || "${val}" == "concept" || "${test}" == "concept" ]]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+ABLATION_RELEVANT_COMBOS_PER_SPEC=$(( \
+    ABLATION_COMBOS_PER_SPEC \
+    - ${#ABLATION_METHODS[@]} \
+    * ( \
+        ${#ABLATION_FIT_FRAMINGS[@]} \
+        * ${#ABLATION_VAL_FRAMINGS[@]} \
+        * ${#ABLATION_TEST_FRAMINGS[@]} \
+        - 2 \
+    ) \
+))

@@ -20,9 +20,10 @@ class Boundaries:
       starts.
     - ``sequence_end[i]``: index of the last non-pad token (inclusive).
 
-    When the framing has no response portion (e.g. Concept), the
-    response is the empty slice ``[prompt_end:sequence_end + 1)``, i.e.
-    ``sequence_end + 1 == prompt_end``.
+    When the framing has no response portion (e.g. ``assistant_text``
+    is empty, or ``assistant_is_response`` is false and ``assistant_text``
+    is folded into the prompt prefix), the response is the empty slice
+    ``[prompt_end:sequence_end + 1)``, i.e. ``sequence_end + 1 == prompt_end``.
 
     Both tensors are 1-D ``long`` and live on the same device as the
     hidden states.
