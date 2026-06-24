@@ -3,7 +3,6 @@
 #SBATCH --output=logs/slurm/ablation_cache.%j.out
 #SBATCH --error=logs/slurm/ablation_cache.%j.err
 #SBATCH --partition=nvidia
-#SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=04:00:00
@@ -45,7 +44,7 @@ DATA_ROOT=${DATA_ROOT:-dataset/icse26}
 PYTHON_MODULE=${PYTHON_MODULE:-python/3.11.3}
 CUDA_MODULE=${CUDA_MODULE:-cuda/12.2.0}
 ENV_DIR=${ENV_DIR:-${SCRATCH:-}/envs/llm-code-correctness}
-HF_HOME=${HF_HOME:-${SCRATCH:-}/hf-models}
+HF_HOME=${HF_HOME:-${SCRATCH:-}/.cache/huggingface}
 
 mkdir -p "${REPO_ROOT}/logs/slurm"
 cd "${REPO_ROOT}"
@@ -72,6 +71,10 @@ source "${ENV_DIR}/bin/activate"
 export HF_HOME
 export TRANSFORMERS_OFFLINE=1
 export HF_HUB_OFFLINE=1
+
+# shellcheck source=../stage_hf_model.sh
+source "${REPO_ROOT}/scripts/slurm/stage_hf_model.sh"
+stage_hf_model_to_local "${MODEL}"
 
 echo "======================================"
 echo "Ablation cache sweep (stage 1)"

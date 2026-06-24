@@ -31,6 +31,11 @@
 # Usage:
 #   bash scripts/slurm/launchers/ablation_cache_sweep.sh [--dry-run]
 #   MODELS="model/a model/b" bash scripts/slurm/launchers/ablation_cache_sweep.sh
+#
+# GPU request (pick one style; do not mix --gpus and --gres in the same submit):
+#   GPUS=1 bash ...                                    # any GPU on the partition
+#   GPU_TYPE=a100 GPUS=1 bash ...                      # typed: --gres=gpu:a100:1
+# Check types on your cluster: scontrol show node <node> | grep Gres
 
 set -euo pipefail
 
@@ -56,6 +61,7 @@ ACCOUNT="${ACCOUNT:-}"
 QOS="${QOS:-}"
 CONSTRAINT="${CONSTRAINT:-}"
 GPUS="${GPUS:-1}"
+GPU_TYPE="${GPU_TYPE:-}"
 CPUS="${CPUS:-8}"
 MEM="${MEM:-96G}"
 TIME="${TIME:-04:00:00}"
@@ -89,11 +95,15 @@ submit() {
     local -a sbatch_args=(
         --job-name="${job_name}"
         --partition="${PARTITION}"
-        --gpus="${GPUS}"
         --cpus-per-task="${CPUS}"
         --mem="${MEM}"
         --time="${TIME}"
     )
+    if [[ -n "${GPU_TYPE}" ]]; then
+        sbatch_args+=(--gres="gpu:${GPU_TYPE}:${GPUS}")
+    else
+        sbatch_args+=(--gpus="${GPUS}")
+    fi
     [[ -n "${ACCOUNT}" ]]    && sbatch_args+=(--account="${ACCOUNT}")
     [[ -n "${QOS}" ]]        && sbatch_args+=(--qos="${QOS}")
     [[ -n "${CONSTRAINT}" ]] && sbatch_args+=(--constraint="${CONSTRAINT}")

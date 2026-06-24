@@ -27,8 +27,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from scripts.experiments._common import (
     METHODS,
@@ -445,8 +450,10 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--representation", required=True, choices=list(REPRESENTATIONS))
     parser.add_argument("--method", required=True, choices=list(METHODS))
-    parser.add_argument("--fit-framing", required=True, choices=["function", "neutral", "concept"],
-                        help="Must match ABLATION_FIT_FRAMINGS in scripts/slurm/ablation_grid.sh.")
+    parser.add_argument("--fit-framing", required=True, choices=["function", "neutral", "concept", "raw"],
+                        help="Must match a framing cached by scripts/extract/cache_hidden_states.py. "
+                             "`raw` is the tagless ICSE paper fit stimulus; use sequence_last "
+                             "(not response_avg) because raw has no response slice.")
     parser.add_argument("--val-framing", required=True, choices=["neutral", "concept"],
                         help="Must match ABLATION_VAL_FRAMINGS in scripts/slurm/ablation_grid.sh.")
     parser.add_argument("--test-framing", default=None, choices=["neutral", "concept"],
@@ -471,6 +478,11 @@ def main():
 
     representation = REPRESENTATIONS[args.representation]
     method = METHODS[args.method]
+
+    if args.fit_framing == "raw" and args.representation == "response_avg":
+        parser.error(
+            "fit-framing raw has no response slice; use --representation sequence_last"
+        )
 
     if args.skip_existing and args.results_dir:
         data_root = Path(args.data_root)

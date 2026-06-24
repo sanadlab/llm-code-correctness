@@ -110,12 +110,19 @@ run_sweep_for_spec() {
     local TEST_FRAMINGS=("${ABLATION_TEST_FRAMINGS[@]}")
 
     local n=0
+    local skipped=0
     local REP METHOD FIT_FRAMING VAL_FRAMING TEST_FRAMING
     for REP in "${REPRESENTATIONS[@]}"; do
         for METHOD in "${METHODS[@]}"; do
             for FIT_FRAMING in "${FIT_FRAMINGS[@]}"; do
                 for VAL_FRAMING in "${VAL_FRAMINGS[@]}"; do
                     for TEST_FRAMING in "${TEST_FRAMINGS[@]}"; do
+                        if ablation_skip_irrelevant_combo \
+                            "${REP}" "${METHOD}" "${FIT_FRAMING}" \
+                            "${VAL_FRAMING}" "${TEST_FRAMING}"; then
+                            skipped=$((skipped + 1))
+                            continue
+                        fi
                         n=$((n + 1))
                         local -a cmd=(python -u "${FIT_SCORE_SCRIPT}"
                             --model "${model}"
@@ -141,7 +148,7 @@ run_sweep_for_spec() {
             done
         done
     done
-    echo "Model ${model} fit_source=${fit_source} test_dataset=${test_dataset}: ${n} combinations"
+    echo "Model ${model} fit_source=${fit_source} test_dataset=${test_dataset}: ${n} combinations (${skipped} skipped as irrelevant)"
 }
 
 run_sweep_for_model() {

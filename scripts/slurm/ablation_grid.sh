@@ -31,15 +31,17 @@ ABLATION_TEST_DATASETS=("bigcodebench" "humaneval")
 ABLATION_REPRESENTATIONS=("response_avg" "sequence_last")
 
 # Stage 1 caches fit/validate/test splits with these framings (see ablation_cache.sbatch).
-ABLATION_FIT_FRAMINGS=("function" "neutral" "concept")
+# `raw` is the ICSE paper fit stimulus (no chat-template role markers). Stage 2 sweeps
+# raw with all method/val/test combos except response_avg (no response slice on raw fit).
+ABLATION_FIT_FRAMINGS=("function" "neutral" "concept" "raw")
 ABLATION_VAL_FRAMINGS=("neutral" "concept")
 ABLATION_TEST_FRAMINGS=("neutral" "concept")
 
 # Stage 2 only (no extra caching needed).
 ABLATION_METHODS=("mean_diff" "pca")
 
-# Combos per dataset-source spec in stage 2:
-#   |REP| x |METHODS| x |FIT| x |VAL| x |TEST| = 2 x 2 x 3 x 2 x 2 = 48
+# Combos per dataset-source spec in stage 2 (full Cartesian product before skips):
+#   |REP| x |METHODS| x |FIT| x |VAL| x |TEST| = 2 x 2 x 4 x 2 x 2 = 64
 ABLATION_COMBOS_PER_SPEC=$(( \
     ${#ABLATION_REPRESENTATIONS[@]} \
     * ${#ABLATION_METHODS[@]} \
@@ -48,16 +50,17 @@ ABLATION_COMBOS_PER_SPEC=$(( \
     * ${#ABLATION_TEST_FRAMINGS[@]} \
 ))
 
-# Stage 2 "relevant" sweep (ablation_fit_score_relevant.sbatch): skip response_avg
-# whenever concept framing appears on fit, validate, or test. Concept + response_avg
-# yields zero activations because the probe stem is part of the prompt slice, not the
-# response slice; use sequence_last for concept instead.
+# Stage 2 skips (full and relevant sweeps call ablation_skip_irrelevant_combo):
+#   - fit=raw with response_avg (raw stimulus has no response slice to pool).
+#   - response_avg whenever concept appears on fit/validate/test (zero response slice).
 #
-# Kept response_avg combos: fit in {function, neutral} with val=neutral and
-# test=neutral only -> 2 per method -> 4 per spec. sequence_last keeps all 24.
-# Total relevant combos per spec: 4 + 24 = 28.
+# Combos per spec after skips: 4 response_avg (function|neutral fit, neutral val&test)
+# + 32 sequence_last (all fit framings x methods x val x test) = 36.
 ablation_skip_irrelevant_combo() {
-    local rep="$1" fit="$2" val="$3" test="$4"
+    local rep="$1" method="$2" fit="$3" val="$4" test="$5"
+    if [[ "${fit}" == "raw" && "${rep}" == "response_avg" ]]; then
+        return 0
+    fi
     if [[ "${rep}" == "response_avg" ]]; then
         if [[ "${fit}" == "concept" || "${val}" == "concept" || "${test}" == "concept" ]]; then
             return 0
@@ -66,13 +69,4 @@ ablation_skip_irrelevant_combo() {
     return 1
 }
 
-ABLATION_RELEVANT_COMBOS_PER_SPEC=$(( \
-    ABLATION_COMBOS_PER_SPEC \
-    - ${#ABLATION_METHODS[@]} \
-    * ( \
-        ${#ABLATION_FIT_FRAMINGS[@]} \
-        * ${#ABLATION_VAL_FRAMINGS[@]} \
-        * ${#ABLATION_TEST_FRAMINGS[@]} \
-        - 2 \
-    ) \
-))
+ABLATION_RELEVANT_COMBOS_PER_SPEC=36
