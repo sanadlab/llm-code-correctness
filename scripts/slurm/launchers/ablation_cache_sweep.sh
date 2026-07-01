@@ -2,13 +2,14 @@
 # Submit the full ablation hidden-state caching sweep (stage 1).
 #
 # For each model, submits one ablation_cache.sbatch job per dataset-source
-# spec (see scripts/slurm/ablation_grid.sh). Stage 2 uses the same 6 specs.
+# spec (see scripts/slurm/ablation_grid.sh). By default (MUTANTS_BENCHMARKS=
+# bcb_based) stage 1 submits 6 cache jobs per model (2 icse26 + 2 ood + 2
+# mutants); each additional benchmark in MUTANTS_BENCHMARKS adds 2 more
+# mutants jobs. Stage 2 sweeps test_dataset for OOD and mutants scoring (more
+# fit+score specs than cache jobs).
 #
-# Note: OOD test bundles are keyed by split_family=ood_<source>, so the
-# outer test extraction is repeated once per ood-source even though the
-# underlying test data/framing is identical between mbpp- and
-# synthetic-sourced cells (matches cache_hidden_states.py's existing
-# on-disk layout; not deduplicated here).
+# OOD and mutants fit/val caches omit the benchmark path segment (no duplication
+# under bigcodebench vs humaneval). Test for OOD/S2 scoring uses icse26 canonical caches.
 #
 # Splitting across collaborators: bundle_output_dir() keys every cache path
 # by model first (hidden_states/<safe_model>/...), so two people can each
@@ -29,8 +30,15 @@
 # per-model top-level directories never overlap, so a plain merge is safe.
 #
 # Usage:
-#   bash scripts/slurm/launchers/ablation_cache_sweep.sh [--dry-run]
+#   bash scripts/slurm/launchers/ablation_cache_sweep.sh [--dry-run] [--mutants-only]
+#   bash scripts/slurm/launchers/ablation_cache_sweep.sh [--dry-run] [--mutants-confounds]
 #   MODELS="model/a model/b" bash scripts/slurm/launchers/ablation_cache_sweep.sh
+#   bash scripts/slurm/launchers/ablation_cache_sweep.sh --mutants-only --dry-run
+#   bash scripts/slurm/launchers/ablation_cache_sweep.sh --mutants-confounds --dry-run
+#
+#   # he_based mutants corpus (bcb_based is the default; opt in via env var):
+#   MUTANTS_BENCHMARKS=he_based bash scripts/slurm/launchers/ablation_cache_sweep.sh --mutants-only --dry-run
+#   MUTANTS_BENCHMARKS="bcb_based he_based" bash scripts/slurm/launchers/ablation_cache_sweep.sh --mutants-only --dry-run
 #
 # GPU request (pick one style; do not mix --gpus and --gres in the same submit):
 #   GPUS=1 bash ...                                    # any GPU on the partition
@@ -55,6 +63,12 @@ DATA_ROOT="${DATA_ROOT:-dataset/icse26}"
 BENCHMARKS=("${ABLATION_BENCHMARKS[@]}")
 OOD_SOURCES=("${ABLATION_OOD_SOURCES[@]}")
 TEST_DATASETS=("${ABLATION_TEST_DATASETS[@]}")
+MUTANTS_STRATEGIES=("${ABLATION_MUTANTS_STRATEGIES[@]}")
+if [[ -n "${MUTANTS_BENCHMARKS:-}" ]]; then
+    read -r -a MUTANTS_BENCHMARKS <<< "${MUTANTS_BENCHMARKS}"
+else
+    MUTANTS_BENCHMARKS=("bcb_based")
+fi
 
 PARTITION="${PARTITION:-nvidia}"
 ACCOUNT="${ACCOUNT:-}"
@@ -77,7 +91,20 @@ else
 fi
 
 DRY_RUN=0
-[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1
+MUTANTS_ONLY=0
+MUTANTS_CONFOUNDS=0
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) DRY_RUN=1 ;;
+        --mutants-only) MUTANTS_ONLY=1 ;;
+        --mutants-confounds) MUTANTS_CONFOUNDS=1 ;;
+    esac
+done
+
+if [[ "${MUTANTS_ONLY}" -eq 1 && "${MUTANTS_CONFOUNDS}" -eq 1 ]]; then
+    echo "Error: --mutants-only and --mutants-confounds are mutually exclusive." >&2
+    exit 1
+fi
 
 if [[ -z "${SCRATCH:-}" ]]; then
     echo "Error: SCRATCH is not set." >&2; exit 1
@@ -117,20 +144,41 @@ submit() {
 
 for MODEL in "${MODELS[@]}"; do
     safe_model="${MODEL//\//__}"
-    for BENCHMARK in "${BENCHMARKS[@]}"; do
-        submit "ablation_cache_id_${BENCHMARK}_${safe_model}" \
-            "MODEL=${MODEL}" "DATASET_SOURCE=icse26" "BENCHMARK=${BENCHMARK}" \
-            "ENV_DIR=${ENV_DIR}" "HF_HOME=${HF_HOME}" \
-            "PYTHON_MODULE=${PYTHON_MODULE}" "CUDA_MODULE=${CUDA_MODULE}" \
-            "REPO_ROOT=${REPO_ROOT}" "OUTPUT_DIR=${OUTPUT_DIR}" "DATA_ROOT=${DATA_ROOT}"
-    done
-    for OOD in "${OOD_SOURCES[@]}"; do
-        for TEST in "${TEST_DATASETS[@]}"; do
-            submit "ablation_cache_ood_${OOD}_${TEST}_${safe_model}" \
-                "MODEL=${MODEL}" "DATASET_SOURCE=ood" "OOD_SOURCE=${OOD}" "TEST_DATASET=${TEST}" \
+    if [[ "${MUTANTS_ONLY}" -eq 0 && "${MUTANTS_CONFOUNDS}" -eq 0 ]]; then
+        for BENCHMARK in "${BENCHMARKS[@]}"; do
+            submit "ablation_cache_id_${BENCHMARK}_${safe_model}" \
+                "MODEL=${MODEL}" "DATASET_SOURCE=icse26" "BENCHMARK=${BENCHMARK}" \
                 "ENV_DIR=${ENV_DIR}" "HF_HOME=${HF_HOME}" \
                 "PYTHON_MODULE=${PYTHON_MODULE}" "CUDA_MODULE=${CUDA_MODULE}" \
                 "REPO_ROOT=${REPO_ROOT}" "OUTPUT_DIR=${OUTPUT_DIR}" "DATA_ROOT=${DATA_ROOT}"
         done
+        for OOD in "${OOD_SOURCES[@]}"; do
+            submit "ablation_cache_ood_${OOD}_${safe_model}" \
+                "MODEL=${MODEL}" "DATASET_SOURCE=ood" "OOD_SOURCE=${OOD}" \
+                "ENV_DIR=${ENV_DIR}" "HF_HOME=${HF_HOME}" \
+                "PYTHON_MODULE=${PYTHON_MODULE}" "CUDA_MODULE=${CUDA_MODULE}" \
+                "REPO_ROOT=${REPO_ROOT}" "OUTPUT_DIR=${OUTPUT_DIR}" "DATA_ROOT=${DATA_ROOT}"
+        done
+    fi
+    for MUTANTS_BENCHMARK in "${MUTANTS_BENCHMARKS[@]}"; do
+        if [[ "${MUTANTS_CONFOUNDS}" -eq 1 ]]; then
+            for SUB in "${ABLATION_MUTANTS_CONFOUNDS_STRATEGIES[@]}"; do
+                submit "ablation_cache_mutconf_${MUTANTS_BENCHMARK}_${SUB}_${safe_model}" \
+                    "MODEL=${MODEL}" "DATASET_SOURCE=mutants_confounds" "SPLIT_FAMILY=${SUB}" \
+                    "MUTANTS_BENCHMARK=${MUTANTS_BENCHMARK}" \
+                    "ENV_DIR=${ENV_DIR}" "HF_HOME=${HF_HOME}" \
+                    "PYTHON_MODULE=${PYTHON_MODULE}" "CUDA_MODULE=${CUDA_MODULE}" \
+                    "REPO_ROOT=${REPO_ROOT}" "OUTPUT_DIR=${OUTPUT_DIR}"
+            done
+        else
+            for SUB in "${MUTANTS_STRATEGIES[@]}"; do
+                submit "ablation_cache_mut_${MUTANTS_BENCHMARK}_${SUB}_${safe_model}" \
+                    "MODEL=${MODEL}" "DATASET_SOURCE=mutants_only" "SPLIT_FAMILY=${SUB}" \
+                    "MUTANTS_BENCHMARK=${MUTANTS_BENCHMARK}" \
+                    "ENV_DIR=${ENV_DIR}" "HF_HOME=${HF_HOME}" \
+                    "PYTHON_MODULE=${PYTHON_MODULE}" "CUDA_MODULE=${CUDA_MODULE}" \
+                    "REPO_ROOT=${REPO_ROOT}" "OUTPUT_DIR=${OUTPUT_DIR}"
+            done
+        fi
     done
 done

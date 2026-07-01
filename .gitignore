@@ -4,21 +4,8 @@ init.txt
 # Generated data and outputs
 data/
 outputs/
-dataset/bigcodebench/frozen.jsonl
-dataset/bigcodebench/intermediate/*/
-# Ignore all top-level .jsonl files in intermediate, but not .jsonl.zst
-dataset/bigcodebench/intermediate/*.jsonl
-!dataset/bigcodebench/intermediate/*.jsonl.zst
+/dataset
 
-# Mutation_DS phase2 splits live inside dataset/bigcodebench/phase2.tar.zst.
-# Hide the decompressed working tree; keep the bundle itself tracked.
-dataset/bigcodebench/phase2/
-!dataset/bigcodebench/phase2.tar.zst
-
-# ICSE26 dataset lives inside dataset/icse26.tar.zst.
-# Hide the decompressed working tree; keep the bundle itself tracked.
-dataset/icse26/
-!dataset/icse26.tar.zst
 
 # Third-party submodule content is fetched via `make setup`
 # (git submodules handle this, but just in case)
@@ -65,18 +52,23 @@ logs/
 /vectors.tar.zst
 /results.tar.zst
 /vectors/
-/hidden_states/*
-!/hidden_states/STRUCTURE.md
-!/hidden_states/README.md
+/hidden_states/
 
 # Raw results and some relevant exceptions
 /results/
 !/results/split_analysis/
 /results/split_analysis/pair_metrics.csv
+
+# visualizations
 /visualizations/
-/ablation_results/
-/relevant_ablation_results/
-/fixed_ablation_results/
+
+# ablations
+/rq1_ablation_results/
+/rq2_mutants_confounds_bcb_based_ablation_results
+/rq2_mutants_only_bcb_based_ablation_results
+/rq2_mutants_only_he_based_ablation_results
+/rq2_mutants_confounds_he_based_ablation_results
+
 
 # Code-reorg experiment raw outputs (tracked as compressed archives instead)
 code-reorg-results/
@@ -84,3 +76,15 @@ code-reorg-vectors/
 
 #visualization interpretation results
 /analysis/
+
+#maintenance scripts
+/scripts/maintenance/
+
+#compressed artifacts
+/rq1_ablation_results.tar.zst
+/rq2_mutants_only_bcb_based_ablation_results.tar.zst
+/rq2_mutants_confounds_bcb_based_ablation_results.tar.zst
+/rq2_mutants_only_he_based_ablation_results.tar.zst
+/rq2_mutants_confounds_he_based_ablation_results.tar.zst
+/dataset.tar.zst
+/hidden_states.tar.zst

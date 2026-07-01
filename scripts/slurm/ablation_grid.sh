@@ -10,9 +10,10 @@
 # sweeps method (mean_diff, pca). Every fit+score combo only loads bundles
 # whose framings were cached in stage 1.
 #
-# Dataset-source specs (6 per model; same job partition in both stages):
+# Dataset-source specs (5 per model when mutants included):
 #   - in-domain:  test_dataset in {bigcodebench, humaneval}
-#   - OOD:        fit_source in {mbpp, synthetic} x test_dataset in {bigcodebench, humaneval}
+#   - OOD:        fit_source in {mbpp, synthetic}  (fit/val cached once; no benchmark segment)
+#   - mutants:    paired (fit/val) + weighted (fit/val/test), per ABLATION_MUTANTS_BENCHMARKS
 #
 # Do not edit one launcher without updating this file and the other stage.
 
@@ -26,6 +27,17 @@ ABLATION_MODELS=(
 ABLATION_BENCHMARKS=("bigcodebench" "humaneval")
 ABLATION_OOD_SOURCES=("mbpp" "synthetic")
 ABLATION_TEST_DATASETS=("bigcodebench" "humaneval")
+
+ABLATION_MUTANTS_STRATEGIES=("paired" "weighted")
+ABLATION_MUTANTS_TEST_DATASETS=("bigcodebench" "humaneval" "mutants_only")
+
+# Mutants corpus benchmark axis: bcb_based is the default/legacy corpus;
+# he_based is opt-in via MUTANTS_BENCHMARKS in the launchers.
+ABLATION_MUTANTS_BENCHMARKS=("bcb_based" "he_based")
+
+# mutants_confounds: paired + weighted only; test target uses mutants_confounds not mutants_only.
+ABLATION_MUTANTS_CONFOUNDS_STRATEGIES=("paired" "weighted")
+ABLATION_MUTANTS_CONFOUNDS_TEST_DATASETS=("bigcodebench" "humaneval" "mutants_confounds")
 
 # Cached in every bundle.pt (stage 1 --representations).
 ABLATION_REPRESENTATIONS=("response_avg" "sequence_last")
@@ -50,23 +62,34 @@ ABLATION_COMBOS_PER_SPEC=$(( \
     * ${#ABLATION_TEST_FRAMINGS[@]} \
 ))
 
-# Stage 2 skips (full and relevant sweeps call ablation_skip_irrelevant_combo):
+# Paper ablation subset (stage 2 --paper-configs): no raw fit; val framing must
+# match test framing. Fit framing may differ from val/test.
+ABLATION_PAPER_FIT_FRAMINGS=("function" "neutral" "concept")
+
+# Stage 2 skips (fit_score sweeps call ablation_skip_irrelevant_combo):
 #   - fit=raw with response_avg (raw stimulus has no response slice to pool).
-#   - response_avg whenever concept appears on fit/validate/test (zero response slice).
 #
-# Combos per spec after skips: 4 response_avg (function|neutral fit, neutral val&test)
-# + 32 sequence_last (all fit framings x methods x val x test) = 36.
+# Combos per spec after skips: 64 - 8 (raw x response_avg x 2 methods x 2 val x 2 test) = 56.
+# With --paper-configs: 2 x 2 x 3 x 2 (val=test pairs only) = 24.
 ablation_skip_irrelevant_combo() {
     local rep="$1" method="$2" fit="$3" val="$4" test="$5"
     if [[ "${fit}" == "raw" && "${rep}" == "response_avg" ]]; then
         return 0
     fi
-    if [[ "${rep}" == "response_avg" ]]; then
-        if [[ "${fit}" == "concept" || "${val}" == "concept" || "${test}" == "concept" ]]; then
-            return 0
-        fi
+    return 1
+}
+
+ablation_skip_non_paper_combo() {
+    local fit="$1" val="$2" test="$3"
+    if [[ "${fit}" == "raw" || "${val}" != "${test}" ]]; then
+        return 0
     fi
     return 1
 }
 
-ABLATION_RELEVANT_COMBOS_PER_SPEC=36
+ABLATION_RELEVANT_COMBOS_PER_SPEC=$(( \
+    ABLATION_COMBOS_PER_SPEC \
+    - ${#ABLATION_METHODS[@]} \
+    * ${#ABLATION_VAL_FRAMINGS[@]} \
+    * ${#ABLATION_TEST_FRAMINGS[@]} \
+))

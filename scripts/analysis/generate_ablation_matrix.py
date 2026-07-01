@@ -42,10 +42,35 @@ REP_ON_DISK = {v: k for k, v in REP_DISPLAY.items()}
 FIT_FRAMINGS = ("function", "neutral", "concept", "raw")
 VAL_FRAMINGS = ("neutral", "concept")
 TEST_FRAMINGS = ("neutral", "concept")
-FIT_SOURCES = ("id", "mbpp", "syn")
-FIT_SOURCE_TO_SPLIT = {"id": "icse26", "mbpp": "ood_mbpp", "syn": "ood_synthetic"}
+FIT_SOURCES = (
+    "id", "mbpp", "syn",
+    "paired", "weighted",
+    "paired_confounds", "weighted_confounds",
+    "paired_he", "weighted_he",
+    "paired_confounds_he", "weighted_confounds_he",
+)
+FIT_SOURCE_TO_SPLIT = {
+    "id": "icse26",
+    "mbpp": "ood_mbpp",
+    "syn": "ood_synthetic",
+    "paired": "mutants_only_bcb_based/paired",
+    "weighted": "mutants_only_bcb_based/weighted",
+    "paired_confounds": "mutants_confounds_bcb_based/paired",
+    "weighted_confounds": "mutants_confounds_bcb_based/weighted",
+    "paired_he": "mutants_only_he_based/paired",
+    "weighted_he": "mutants_only_he_based/weighted",
+    "paired_confounds_he": "mutants_confounds_he_based/paired",
+    "weighted_confounds_he": "mutants_confounds_he_based/weighted",
+}
 SPLIT_TO_FIT_SOURCE = {v: k for k, v in FIT_SOURCE_TO_SPLIT.items()}
-TEST_DATASETS = ("bigcodebench", "humaneval")
+TEST_DATASETS = ("bigcodebench", "humaneval", "mutants_only", "mutants_confounds")
+# icse26 benchmarks where mutants/confounds fit sources may use --val-on-test-dataset.
+VAL_DATASET_BENCHMARKS = frozenset({"bigcodebench", "humaneval"})
+MUTANTS_FIT_SOURCES = frozenset({"paired", "weighted", "paired_he", "weighted_he"})
+MUTANTS_CONFOUNDS_FIT_SOURCES = frozenset(
+    {"paired_confounds", "weighted_confounds", "paired_confounds_he", "weighted_confounds_he"}
+)
+VAL_DS_FIT_SOURCES = MUTANTS_FIT_SOURCES | MUTANTS_CONFOUNDS_FIT_SOURCES
 MODELS = (
     "mistralai__Mistral-7B-Instruct-v0.3",
     "Qwen__Qwen2.5-Coder-7B-Instruct",
@@ -58,7 +83,19 @@ FRAMING_PREFIX = {"function": "F", "neutral": "N", "concept": "C", "raw": "R"}
 ALL_METRICS = ("one_of_4", "pairwise")
 METRIC_KEYS = {"one_of_4": "one_of_4", "pairwise": "pairwise_acc"}
 METRIC_LABELS = {"one_of_4": "1of4", "pairwise": "pairwise"}
-EXPECTED_FOLDS = {"icse26": 10, "ood_mbpp": 40, "ood_synthetic": 40}
+EXPECTED_FOLDS = {
+    "icse26": 10,
+    "ood_mbpp": 40,
+    "ood_synthetic": 40,
+    "mutants_only_bcb_based/paired": 10,
+    "mutants_only_bcb_based/weighted": 10,
+    "mutants_confounds_bcb_based/paired": 10,
+    "mutants_confounds_bcb_based/weighted": 10,
+    "mutants_only_he_based/paired": 10,
+    "mutants_only_he_based/weighted": 10,
+    "mutants_confounds_he_based/paired": 10,
+    "mutants_confounds_he_based/weighted": 10,
+}
 DEFAULT_WORKERS = 32
 
 
@@ -75,6 +112,19 @@ def is_irrelevant_combo(
     return fit_framing == "raw" and representation == "response_avg"
 
 
+def eval_segment(
+    val_framing: str,
+    test_framing: str,
+    *,
+    val_dataset: Optional[str] = None,
+) -> str:
+    """Mirror fit_and_score_from_cache._eval_segment for result path lookup."""
+    base = f"val={val_framing}__test={test_framing}"
+    if val_dataset is not None:
+        return f"val_ds={val_dataset}__{base}"
+    return base
+
+
 def config_path(
     model: str,
     split_family: str,
@@ -84,10 +134,12 @@ def config_path(
     representation: str,
     val_framing: str,
     test_framing: str,
+    *,
+    val_dataset: Optional[str] = None,
 ) -> str:
     return (
         f"{model}/{split_family}/{test_dataset}/id/{method}/{fit_framing}/"
-        f"{representation}/val={val_framing}__test={test_framing}"
+        f"{representation}/{eval_segment(val_framing, test_framing, val_dataset=val_dataset)}"
     )
 
 
@@ -246,39 +298,78 @@ def metric_column_names(metrics: Sequence[str]) -> List[str]:
     return cols
 
 
-def base_fieldnames(metrics: Sequence[str]) -> List[str]:
-    return [
+def base_fieldnames(metrics: Sequence[str], *, include_val_dataset: bool) -> List[str]:
+    fields = [
         "ConfigID", "Method", "Representation", "FramingKey",
         "FramingFit", "FramingVal", "FramingTest",
-        "FitSource", "TestDataset", "Model",
+        "FitSource", "TestDataset",
+    ]
+    if include_val_dataset:
+        fields.append("ValDataset")
+    fields.extend([
+        "Model",
         "n_folds",
         *metric_column_names(metrics),
         "Status", "Notes",
-    ]
+    ])
+    return fields
 
 
-def enumerate_rows() -> Iterable[dict]:
+def _val_dataset_variants(
+    fit_source: str,
+    test_dataset: str,
+    *,
+    include_val_dataset: bool,
+) -> List[Tuple[Optional[str], str]]:
+    """Return (val_ds path token, ValDataset column label) pairs for one cell."""
+    if not include_val_dataset:
+        return [(None, fit_source)]
+    variants: List[Tuple[Optional[str], str]] = [(None, fit_source)]
+    if (
+        fit_source in VAL_DS_FIT_SOURCES
+        and test_dataset in VAL_DATASET_BENCHMARKS
+    ):
+        variants.append((test_dataset, test_dataset))
+    return variants
+
+
+def enumerate_rows(*, include_val_dataset: bool = False) -> Iterable[dict]:
     for cfg in build_config_registry():
         for fit_source, test_dataset, model in product(FIT_SOURCES, TEST_DATASETS, MODELS):
+            if test_dataset == "mutants_only" and fit_source not in MUTANTS_FIT_SOURCES:
+                continue
+            if test_dataset == "mutants_confounds" and fit_source not in MUTANTS_CONFOUNDS_FIT_SOURCES:
+                continue
+            if fit_source in MUTANTS_CONFOUNDS_FIT_SOURCES and test_dataset == "mutants_only":
+                continue
+            if fit_source in MUTANTS_FIT_SOURCES and test_dataset == "mutants_confounds":
+                continue
             split_family = FIT_SOURCE_TO_SPLIT[fit_source]
-            yield {
-                "config_id": cfg["config_id"],
-                "method": cfg["method"],
-                "representation_display": cfg["representation_display"],
-                "framing_key": cfg["framing_key"],
-                "fit_framing": cfg["fit_framing"],
-                "val_framing": cfg["val_framing"],
-                "test_framing": cfg["test_framing"],
-                "fit_source": fit_source,
-                "split_family": split_family,
-                "test_dataset": test_dataset,
-                "model": model,
-                "config_path": config_path(
-                    model, split_family, test_dataset,
-                    cfg["method"], cfg["fit_framing"], cfg["representation"],
-                    cfg["val_framing"], cfg["test_framing"],
-                ),
-            }
+            for val_ds, val_dataset_label in _val_dataset_variants(
+                fit_source, test_dataset, include_val_dataset=include_val_dataset,
+            ):
+                spec = {
+                    "config_id": cfg["config_id"],
+                    "method": cfg["method"],
+                    "representation_display": cfg["representation_display"],
+                    "framing_key": cfg["framing_key"],
+                    "fit_framing": cfg["fit_framing"],
+                    "val_framing": cfg["val_framing"],
+                    "test_framing": cfg["test_framing"],
+                    "fit_source": fit_source,
+                    "split_family": split_family,
+                    "test_dataset": test_dataset,
+                    "model": model,
+                    "config_path": config_path(
+                        model, split_family, test_dataset,
+                        cfg["method"], cfg["fit_framing"], cfg["representation"],
+                        cfg["val_framing"], cfg["test_framing"],
+                        val_dataset=val_ds,
+                    ),
+                }
+                if include_val_dataset:
+                    spec["val_dataset"] = val_dataset_label
+                yield spec
 
 
 def row_to_dict(spec: dict, aggregates: Dict[str, dict], metrics: Sequence[str]) -> dict:
@@ -302,6 +393,8 @@ def row_to_dict(spec: dict, aggregates: Dict[str, dict], metrics: Sequence[str])
         "Status": status_for(n_folds, spec["split_family"]),
         "Notes": "",
     }
+    if "val_dataset" in spec:
+        row["ValDataset"] = spec["val_dataset"]
     if len(metrics) == 1:
         metric = metrics[0]
         row["avg"] = fmt(sel.get(metric), "mean")
@@ -360,6 +453,14 @@ def main() -> None:
         default="-",
         help="Output file path, or '-' for stdout (default)",
     )
+    parser.add_argument(
+        "--include-val-dataset",
+        action="store_true",
+        help=(
+            "Add ValDataset column and rows for val_ds=<benchmark> results "
+            "(layer selection on the OOD validate split; mutants/confounds fit sources)"
+        ),
+    )
     args = parser.parse_args()
 
     results_dir = Path(args.results_dir)
@@ -372,7 +473,8 @@ def main() -> None:
         sys.exit(1)
 
     metrics = list(dict.fromkeys(args.metrics))  # preserve order, dedupe
-    fieldnames = base_fieldnames(metrics)
+    include_val_dataset = args.include_val_dataset
+    fieldnames = base_fieldnames(metrics, include_val_dataset=include_val_dataset)
     aggregates = load_or_build_aggregates(
         results_dir, cache_path, args.rebuild, args.workers,
     )
@@ -383,7 +485,7 @@ def main() -> None:
             out, fieldnames=fieldnames, delimiter=args.delimiter, lineterminator="\n",
         )
         writer.writeheader()
-        for spec in enumerate_rows():
+        for spec in enumerate_rows(include_val_dataset=include_val_dataset):
             writer.writerow(row_to_dict(spec, aggregates, metrics))
     finally:
         if out is not sys.stdout:

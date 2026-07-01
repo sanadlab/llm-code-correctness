@@ -35,7 +35,18 @@ FIT_SCORE_SCRIPT = "scripts/experiments/fit_and_score_from_cache.py"
 def _fit_source_from_metadata(meta: dict) -> str:
     if meta.get("split_family") == "icse26":
         return "in-domain"
-    return meta["ood_source"]
+    split_family = meta.get("split_family", "")
+    if split_family.startswith("mutants_confounds_"):
+        benchmark, strategy = split_family[len("mutants_confounds_"):].split("/", 1)
+        suffix = "_he" if benchmark == "he_based" else ""
+        return f"{strategy}_confounds{suffix}"
+    if split_family.startswith("mutants_only_"):
+        benchmark, strategy = split_family[len("mutants_only_"):].split("/", 1)
+        suffix = "_he" if benchmark == "he_based" else ""
+        return f"{strategy}{suffix}"
+    if "ood_source" in meta:
+        return meta["ood_source"]
+    return meta.get("fit_source", "unknown")
 
 
 def _test_dataset_from_metadata(meta: dict) -> str:

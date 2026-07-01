@@ -30,13 +30,19 @@ from scripts.experiments._common import (
 )
 from src.hidden_states import (
     HiddenStateBundle,
+    MUTANTS_BENCHMARKS,
+    MUTANTS_CONFOUNDS_STRATEGIES,
+    MUTANTS_STRATEGIES,
     SPLIT_TO_JSONL,
     VerifyConfig,
     build_bundle_metadata,
     bundle_is_complete,
     bundle_output_dir,
+    cache_path_distribution,
     framing_dispatcher,
     git_commit,
+    mutants_confounds_split_family,
+    mutants_split_family,
     verify_standard_fold,
     write_bundle_metadata,
 )
@@ -53,9 +59,22 @@ class DatasetSpec:
     splits_dir: Path
     distribution: str = "id"
     fold_prefix: str = "fold"
+    benchmark_in_path: bool = True
     ood_source: Optional[str] = None
     test_dataset: Optional[str] = None
     outer_fold: Optional[int] = None
+
+
+def path_benchmark(spec: DatasetSpec) -> Optional[str]:
+    """Benchmark path segment, or ``None`` when fit/val are benchmark-agnostic."""
+    return spec.benchmark if spec.benchmark_in_path else None
+
+
+def metadata_dataset_label(spec: DatasetSpec) -> str:
+    """``dataset`` field for bundle metadata (may differ from path layout)."""
+    if spec.ood_source is not None and spec.ood_source not in {"mutants"}:
+        return spec.ood_source
+    return spec.benchmark
 
 
 @dataclass(frozen=True)
@@ -105,6 +124,30 @@ def _parse_framings(pairs: Sequence[str], data_splits: Sequence[str]) -> Dict[st
     return framings
 
 
+MUTANTS_ONLY_STRATEGIES = MUTANTS_STRATEGIES
+MUTANTS_CONFOUNDS_ONLY_STRATEGIES = MUTANTS_CONFOUNDS_STRATEGIES
+
+MUTANTS_BENCHMARK_LABELS = {"bcb_based": "bigcodebench", "he_based": "humaneval"}
+
+
+def mutants_benchmark_label(benchmark: str) -> str:
+    """Canonical icse26 benchmark name backing a mutants corpus (matches manifest.json)."""
+    return MUTANTS_BENCHMARK_LABELS[benchmark]
+
+
+def assert_known_mutants_strategy(strategy: str, *, dataset_source: str) -> None:
+    allowed = (
+        MUTANTS_CONFOUNDS_ONLY_STRATEGIES
+        if dataset_source == "mutants_confounds"
+        else MUTANTS_ONLY_STRATEGIES
+    )
+    if strategy not in allowed:
+        raise ValueError(
+            f"unknown {dataset_source} strategy {strategy!r}; "
+            f"expected one of: {', '.join(sorted(allowed))}"
+        )
+
+
 def _protocol_defaults(protocol: str) -> Dict[str, str]:
     if protocol == "mean_diff":
         return {"fit": "function", "validate": "neutral", "test": "neutral"}
@@ -136,27 +179,39 @@ def resolve_dataset_specs(args: argparse.Namespace) -> List[DatasetSpec]:
                 splits_dir=splits_dir,
             )
         )
+    elif args.dataset_source == "mutants_only":
+        strategy = args.split_family
+        assert_known_mutants_strategy(strategy, dataset_source="mutants_only")
+        splits_dir = data_root / strategy
+        out.append(
+            DatasetSpec(
+                split_family=mutants_split_family(strategy, args.mutants_benchmark),
+                benchmark=mutants_benchmark_label(args.mutants_benchmark),
+                splits_dir=splits_dir,
+                benchmark_in_path=False,
+            )
+        )
+    elif args.dataset_source == "mutants_confounds":
+        strategy = args.split_family
+        assert_known_mutants_strategy(strategy, dataset_source="mutants_confounds")
+        splits_dir = data_root / strategy
+        out.append(
+            DatasetSpec(
+                split_family=mutants_confounds_split_family(strategy, args.mutants_benchmark),
+                benchmark=mutants_benchmark_label(args.mutants_benchmark),
+                splits_dir=splits_dir,
+                benchmark_in_path=False,
+            )
+        )
     else:  # ood
-        # Inner OOD fit/validate source
         out.append(
             DatasetSpec(
                 split_family=f"ood_{args.ood_source}",
-                benchmark=args.test_dataset,
+                benchmark="bigcodebench",
                 splits_dir=data_root / args.ood_source,
                 fold_prefix="inner",
                 ood_source=args.ood_source,
-                test_dataset=args.test_dataset,
-            )
-        )
-        # Outer ID test source
-        out.append(
-            DatasetSpec(
-                split_family=f"ood_{args.ood_source}",
-                benchmark=args.test_dataset,
-                splits_dir=data_root / args.test_dataset,
-                fold_prefix="fold",
-                ood_source=args.ood_source,
-                test_dataset=args.test_dataset,
+                benchmark_in_path=False,
             )
         )
     return out
@@ -187,8 +242,8 @@ def iter_extraction_jobs(config: ExtractionConfig) -> Iterable[ExtractionJob]:
                         output_root=config.output_dir,
                         model_name=model_name,
                         split_family=dataset.split_family,
-                        benchmark=dataset.benchmark,
-                        distribution=dataset.distribution,
+                        benchmark=path_benchmark(dataset),
+                        distribution=cache_path_distribution(dataset.split_family),
                         data_split=data_split,
                         framing=framing,
                         fold=fold,
@@ -206,12 +261,10 @@ def iter_extraction_jobs(config: ExtractionConfig) -> Iterable[ExtractionJob]:
 
 
 def _should_extract_split(dataset: DatasetSpec, data_split: str) -> bool:
-    # OOD inner source only has fit/validate; OOD outer source used for test.
+    # OOD inner source only has fit/validate; test comes from icse26 at score time.
     if dataset.ood_source is None:
         return True
-    if dataset.fold_prefix == "inner":
-        return data_split in {"fit", "validate"}
-    return data_split == "test"
+    return data_split in {"fit", "validate"}
 
 
 def max_length_for_split(data_split: str, config: ExtractionConfig) -> int:
@@ -275,7 +328,7 @@ def extract_one_job(
     bundle.save(bundle_path)
     meta = build_bundle_metadata(
         model=job.model_name,
-        dataset=job.dataset.benchmark,
+        dataset=metadata_dataset_label(job.dataset),
         split_family=job.dataset.split_family,
         distribution=job.dataset.distribution,
         fold=job.fold,
@@ -339,9 +392,19 @@ def run_verification(config: ExtractionConfig) -> None:
 def parse_args() -> ExtractionConfig:
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", nargs="+", required=True)
-    parser.add_argument("--dataset-source", choices=["icse26", "mutation", "ood"], required=True)
+    parser.add_argument(
+        "--dataset-source",
+        choices=["icse26", "mutation", "mutants_only", "mutants_confounds", "ood"],
+        required=True,
+    )
     parser.add_argument("--benchmark", choices=["bigcodebench", "humaneval"], default="bigcodebench")
     parser.add_argument("--split-family", default="icse26")
+    parser.add_argument(
+        "--mutants-benchmark",
+        choices=sorted(MUTANTS_BENCHMARKS),
+        default="bcb_based",
+        help="Which mutants corpus to use for --dataset-source mutants_only|mutants_confounds.",
+    )
     parser.add_argument("--ood-source", choices=["synthetic", "mbpp"], default=None)
     parser.add_argument("--test-dataset", choices=["bigcodebench", "humaneval"], default=None)
     parser.add_argument(
@@ -387,8 +450,24 @@ def parse_args() -> ExtractionConfig:
     args = parser.parse_args()
 
     if args.dataset_source == "ood":
-        if args.ood_source is None or args.test_dataset is None:
-            raise ValueError("--ood-source and --test-dataset are required for --dataset-source ood")
+        if args.ood_source is None:
+            raise ValueError("--ood-source is required for --dataset-source ood")
+
+    if args.dataset_source == "mutants_only":
+        if args.split_family == "icse26":
+            raise ValueError(
+                "--split-family is required for --dataset-source mutants_only "
+                "(e.g. paired or weighted)"
+            )
+        assert_known_mutants_strategy(args.split_family, dataset_source="mutants_only")
+
+    if args.dataset_source == "mutants_confounds":
+        if args.split_family == "icse26":
+            raise ValueError(
+                "--split-family is required for --dataset-source mutants_confounds "
+                "(e.g. paired or weighted)"
+            )
+        assert_known_mutants_strategy(args.split_family, dataset_source="mutants_confounds")
 
     if args.verify_only and not args.verify:
         raise ValueError("--verify-only requires --verify")
@@ -396,6 +475,10 @@ def parse_args() -> ExtractionConfig:
     if args.data_root is None:
         if args.dataset_source == "mutation":
             args.data_root = "dataset/bigcodebench/phase2"
+        elif args.dataset_source == "mutants_only":
+            args.data_root = f"dataset/mutants_only_{args.mutants_benchmark}"
+        elif args.dataset_source == "mutants_confounds":
+            args.data_root = f"dataset/mutants_confounds_{args.mutants_benchmark}"
         else:
             args.data_root = "dataset/icse26"
 
