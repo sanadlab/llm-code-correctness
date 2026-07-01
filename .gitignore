@@ -20,6 +20,8 @@ dataset/bigcodebench/phase2/
 # Hide the decompressed working tree; keep the bundle itself tracked.
 dataset/icse26/
 !dataset/icse26.tar.zst
+/dataset
+
 
 # Third-party submodule content is fetched via `make setup`
 # (git submodules handle this, but just in case)
@@ -67,16 +69,26 @@ logs/
 /results.tar.zst
 /vectors/
 /hidden_states/*
-!/hidden_states/STRUCTURE.md
 !/hidden_states/README.md
+!/hidden_states/STRUCTURE.md
 
 # Raw results and some relevant exceptions
 /results/
 !/results/split_analysis/
 /results/split_analysis/pair_metrics.csv
+
+# visualizations
 /visualizations/
 /rq1_results/
 /results_icse26_val_1_4/
+
+# ablations
+/rq1_ablation_results/
+/rq2_mutants_confounds_bcb_based_ablation_results
+/rq2_mutants_only_bcb_based_ablation_results
+/rq2_mutants_only_he_based_ablation_results
+/rq2_mutants_confounds_he_based_ablation_results
+
 
 # Code-reorg experiment raw outputs (tracked as compressed archives instead)
 code-reorg-results/
@@ -92,3 +104,16 @@ code-reorg-vectors/
 /vectors/mistralai__Mistral-7B-Instruct-v0.3/
 /vectors/Qwen__Qwen2.5-Coder-7B-Instruct/
 
+/analysis/
+
+#maintenance scripts
+/scripts/maintenance/
+
+#compressed artifacts
+/rq1_ablation_results.tar.zst
+/rq2_mutants_only_bcb_based_ablation_results.tar.zst
+/rq2_mutants_confounds_bcb_based_ablation_results.tar.zst
+/rq2_mutants_only_he_based_ablation_results.tar.zst
+/rq2_mutants_confounds_he_based_ablation_results.tar.zst
+/dataset.tar.zst
+/hidden_states.tar.zst

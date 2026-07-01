@@ -81,34 +81,136 @@ def framing_dispatcher(framing_key: str, model_name: str) -> FramingFor:
     return lambda _record: framing
 
 
+MUTANTS_BENCHMARKS = frozenset({"bcb_based", "he_based"})
+MUTANTS_STRATEGIES = frozenset({"paired", "weighted"})
+MUTANTS_CONFOUNDS_STRATEGIES = frozenset({"paired", "weighted"})
+# Canonical mutant test split: shared across all fit strategies at cache/score time.
+MUTANTS_TEST_STRATEGY = "weighted"
+
+
+def _assert_known_mutants_benchmark(benchmark: str) -> None:
+    if benchmark not in MUTANTS_BENCHMARKS:
+        allowed = ", ".join(sorted(MUTANTS_BENCHMARKS))
+        raise ValueError(f"unknown mutants benchmark {benchmark!r}; expected one of: {allowed}")
+
+
+def mutants_split_family(strategy: str, benchmark: str = "bcb_based") -> str:
+    """Cache/results split_family for a mutants strategy (e.g. ``mutants_only_bcb_based/paired``)."""
+    _assert_known_mutants_benchmark(benchmark)
+    if strategy not in MUTANTS_STRATEGIES:
+        allowed = ", ".join(sorted(MUTANTS_STRATEGIES))
+        raise ValueError(f"unknown mutants strategy {strategy!r}; expected one of: {allowed}")
+    return f"mutants_only_{benchmark}/{strategy}"
+
+
+def mutants_confounds_split_family(strategy: str, benchmark: str = "bcb_based") -> str:
+    """Cache/results split_family for mutants_confounds (e.g. ``mutants_confounds_bcb_based/paired``)."""
+    _assert_known_mutants_benchmark(benchmark)
+    if strategy not in MUTANTS_CONFOUNDS_STRATEGIES:
+        allowed = ", ".join(sorted(MUTANTS_CONFOUNDS_STRATEGIES))
+        raise ValueError(
+            f"unknown mutants_confounds strategy {strategy!r}; expected one of: {allowed}"
+        )
+    return f"mutants_confounds_{benchmark}/{strategy}"
+
+
+def mutants_test_split_family(benchmark: str = "bcb_based") -> str:
+    """Split family for the shared mutant test cache (always operator-weighted)."""
+    return mutants_split_family(MUTANTS_TEST_STRATEGY, benchmark)
+
+
+def mutants_confounds_test_split_family(benchmark: str = "bcb_based") -> str:
+    """Split family for the shared mutants_confounds test cache (weighted)."""
+    return mutants_confounds_split_family(MUTANTS_TEST_STRATEGY, benchmark)
+
+
+def is_mutants_split_family(split_family: str) -> bool:
+    return split_family.startswith("mutants_only_")
+
+
+def is_mutants_confounds_split_family(split_family: str) -> bool:
+    return split_family.startswith("mutants_confounds_")
+
+
+def is_mutants_variant_split_family(split_family: str) -> bool:
+    return is_mutants_split_family(split_family) or is_mutants_confounds_split_family(split_family)
+
+
+def cache_path_distribution(split_family: str) -> Optional[str]:
+    """Distribution segment for hidden-state cache paths, or ``None`` to omit."""
+    if split_family.startswith(("ood_", "mutants_only_", "mutants_confounds_")):
+        return None
+    return "id"
+
+
 def bundle_output_dir(
     output_root: Path,
     model_name: str,
     split_family: str,
-    benchmark: str,
-    distribution: str,
+    benchmark: Optional[str],
+    distribution: Optional[str],
     data_split: str,
     framing: str,
     fold: int,
     fold_prefix: str = "fold",
 ) -> Path:
-    """Leaf directory for one cached bundle (without ``bundle.pt``)."""
-    return (
-        Path(output_root)
-        / safe_model_dir(model_name)
-        / split_family
-        / benchmark
-        / distribution
-        / data_split
-        / framing
-        / fold_dir_name(fold, fold_prefix)
-    )
+    """Leaf directory for one cached bundle (without ``bundle.pt``).
+
+  When ``benchmark`` is ``None``, the benchmark segment is omitted from the path.
+  Used for OOD and mutants fit/val caches where activations do not depend on the
+  downstream test benchmark (icse26 test bundles keep a benchmark segment).
+
+  When ``distribution`` is ``None``, the distribution segment is omitted (OOD and
+  mutants). Pass ``cache_path_distribution(split_family)`` when unsure.
+    """
+    parts = [
+        Path(output_root),
+        safe_model_dir(model_name),
+        split_family,
+    ]
+    if benchmark is not None:
+        parts.append(benchmark)
+    if distribution is not None:
+        parts.append(distribution)
+    parts.extend([
+        data_split,
+        framing,
+        fold_dir_name(fold, fold_prefix),
+    ])
+    path = Path(parts[0])
+    for part in parts[1:]:
+        path = path / part
+    return path
 
 
-def bundle_is_complete(out_dir: Path, force: bool) -> bool:
+def bundle_is_complete(
+    out_dir: Path,
+    force: bool,
+    expected_representations: Sequence[str] = (),
+) -> bool:
+    """Return True when an on-disk bundle can be skipped for this extraction run.
+
+    A bundle is complete when ``bundle.pt`` and ``metadata.json`` exist and the
+    metadata lists every representation requested for the current run. This lets
+    reruns backfill partially cached cells (e.g. an older bundle with only
+    ``response_avg``) without re-extracting cells that already have everything.
+    """
     if force:
         return False
-    return (out_dir / "bundle.pt").is_file() and (out_dir / "metadata.json").is_file()
+    bundle_path = out_dir / "bundle.pt"
+    meta_path = out_dir / "metadata.json"
+    if not bundle_path.is_file() or not meta_path.is_file():
+        return False
+    if not expected_representations:
+        return True
+    try:
+        meta = json.loads(meta_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+    cached = meta.get("representations")
+    if not isinstance(cached, list):
+        return False
+    return set(expected_representations).issubset(cached)
 
 
 def sample_ids_hash(sample_ids: Sequence[str]) -> str:

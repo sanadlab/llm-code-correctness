@@ -79,18 +79,20 @@ class Concept(Framing):
         )
         if self.paper_exact:
             # Paper-exact mode: bake chat markers in, skip apply_chat_template.
-            full = (
-                f"{self.user_start}{user_body}{self.user_end}"
-                f"{self.assistant_start}{assistant_body}"
+            # Markers through assistant_start go in user_text; the stem is
+            # assistant_text so the extractor can treat it as the response
+            # slice (same token sequence as one concatenated string).
+            user_text = (
+                f"{self.user_start}{user_body}{self.user_end}{self.assistant_start}"
             )
             return Prompt(
-                user_text=full,
-                assistant_text="",
-                assistant_is_response=False,
+                user_text=user_text,
+                assistant_text=assistant_body,
+                assistant_is_response=True,
                 use_chat_template=False,
             )
         return Prompt(
             user_text=user_body,
             assistant_text=assistant_body,
-            assistant_is_response=False,
+            assistant_is_response=True,
         )
