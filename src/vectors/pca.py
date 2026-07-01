@@ -1,22 +1,24 @@
 """PCA-on-contrasts vector method.
 
-Paper-faithful replication of the LAT / `repe` `PCARepReader` pipeline.
+Paper-faithful replication of the LAT / `repe` `PCARepReader` pipeline for
+standard splits (one positive + one negative per task_id).
 
-For each fit task with one positive and one negative sample, simulate the
-paper's `aligned_shuffle(seed=task_idx)` to randomize which of (pos, neg)
-comes first, then build ONE signed difference vector per task
-(`first - second`). Fit a 1-component PCA on the (centered) differences.
-Sign is determined so that, at the chosen layer, positive samples score
-higher on average than negative ones.
+When a task_id has multiple positives and negatives (e.g. mutant ``paired``
+fit rows, each jsonl line → one canonical + one mutant), each matched pair is
+treated as its own contrast: build signed difference vectors and fit PCA on
+the stack of differences.
+
+For each contrast, simulate the paper's ``aligned_shuffle(seed=contrast_idx)``
+to randomize which of (pos, neg) comes first. Sign is determined by per-contrast
+argmin/argmax voting on raw projections.
 
 We also skip layers 0 (embedding) and 1, matching the paper's
-`hidden_layers = list(range(-1, -num_hidden_layers, -1))` which excludes
-the embedding and the very first transformer layer's output.
+``hidden_layers = list(range(-1, -num_hidden_layers, -1))``.
 """
 
 import random
 from collections import OrderedDict
-from typing import List
+from typing import List, Tuple
 
 import numpy as np
 import torch
@@ -96,6 +98,49 @@ def _determine_sign(
     return 1 if diff > 0 else -1
 
 
+def _build_contrast_pairs(
+    task_groups: "OrderedDict[str, dict]",
+) -> Tuple[List[int], List[int], List[np.ndarray]]:
+    """Build (first, second) index lists and per-contrast sign-vote groups.
+
+    Each task contributes ``min(n_pos, n_neg)`` contrasts, pairing positives
+    and negatives by order of appearance (sorted row indices). Multiple jsonl
+    rows sharing a ``task_id`` (mutant ``paired`` fit) therefore yield one PCA
+    contrast per row.
+    """
+    first_indices: List[int] = []
+    second_indices: List[int] = []
+    sign_vote_groups: List[np.ndarray] = []
+    contrast_idx = 0
+
+    for tid, g in task_groups.items():
+        pos_indices = sorted(g["pos"])
+        neg_indices = sorted(g["neg"])
+        if not pos_indices or not neg_indices:
+            raise ValueError(
+                f"PCA.fit: task {tid!r} must have at least one positive and "
+                f"one negative sample (got pos={len(pos_indices)}, "
+                f"neg={len(neg_indices)})"
+            )
+        if len(pos_indices) != len(neg_indices):
+            raise ValueError(
+                f"PCA.fit: task {tid!r} has unequal pos/neg counts "
+                f"(pos={len(pos_indices)}, neg={len(neg_indices)}); "
+                "pairing requires matched contrasts"
+            )
+        for pos_i, neg_i in zip(pos_indices, neg_indices):
+            if _aligned_shuffle_keeps_order(contrast_idx):
+                first_indices.append(pos_i)
+                second_indices.append(neg_i)
+            else:
+                first_indices.append(neg_i)
+                second_indices.append(pos_i)
+            sign_vote_groups.append(np.array([pos_i, neg_i]))
+            contrast_idx += 1
+
+    return first_indices, second_indices, sign_vote_groups
+
+
 class PCA(VectorMethod):
     name = "pca"
 
@@ -115,36 +160,14 @@ class PCA(VectorMethod):
             g["all"].append(i)
             g["pos" if int(labels_np[i]) == 1 else "neg"].append(i)
 
-        # Paper's fit expects exactly 1 pos + 1 neg per task.
-        first_indices: List[int] = []
-        second_indices: List[int] = []
-        for task_idx, (tid, g) in enumerate(task_groups.items()):
-            if len(g["pos"]) != 1 or len(g["neg"]) != 1:
-                raise ValueError(
-                    f"PCA.fit: task {tid!r} must have exactly 1 positive and "
-                    f"1 negative sample (got pos={len(g['pos'])}, "
-                    f"neg={len(g['neg'])}). The paper-faithful PCA fit "
-                    "operates on (pos, neg) pairs."
-                )
-            pos_i, neg_i = g["pos"][0], g["neg"][0]
-            # Mimic `aligned_shuffle(seed=task_idx)` on [(pos, 1), (neg, 0)].
-            # When the original order is preserved, pos is first.
-            if _aligned_shuffle_keeps_order(task_idx):
-                first_indices.append(pos_i)
-                second_indices.append(neg_i)
-            else:
-                first_indices.append(neg_i)
-                second_indices.append(pos_i)
-
+        first_indices, second_indices, sign_vote_groups = _build_contrast_pairs(
+            task_groups
+        )
         first_indices_np = np.array(first_indices)
         second_indices_np = np.array(second_indices)
 
-        # List of per-task row-index arrays, in the same task enumeration
-        # used above. Used by the per-task sign vote.
-        task_indices = [np.array(g["all"]) for _, g in task_groups.items()]
-
         if len(first_indices_np) < 2:
-            raise ValueError("PCA.fit: need at least 2 (pos, neg) tasks")
+            raise ValueError("PCA.fit: need at least 2 (pos, neg) contrasts")
 
         num_layers = acts.shape[1]
         vectors, signs, centering, extras = {}, {}, {}, {}
@@ -160,7 +183,9 @@ class PCA(VectorMethod):
                 continue  # dead layer; skip
 
             direction, mean, pca_model = _fit_layer_direction(differences)
-            sign = _determine_sign(layer_acts, labels_np, task_indices, direction, mean)
+            sign = _determine_sign(
+                layer_acts, labels_np, sign_vote_groups, direction, mean
+            )
 
             vectors[layer] = torch.from_numpy(direction).float()
             signs[layer] = int(sign)
