@@ -1,0 +1,17 @@
+hidden_states_sohaila/
+hidden_states_re2230/
+hidden_states/
+outputs/
+cache/
+.cache/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.npy
+*.npz
+*.pkl
+*.jsonl
+*.zip
+__pycache__/
+.ipynb_checkpoints/

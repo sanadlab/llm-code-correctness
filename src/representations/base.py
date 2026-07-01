@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Dict
 
 import torch
 
@@ -40,6 +41,12 @@ class Representation(ABC):
     #: and in result paths (e.g. ``"response_avg"``).
     name: str
 
+    #: Alternate keys that may appear in cached ``bundle.pt`` files.
+    _ACT_ALIASES: Dict[str, tuple] = {
+        "sequence_last": ("seq_last",),
+        "seq_last": ("sequence_last",),
+    }
+
     @abstractmethod
     def pool(
         self,
@@ -63,4 +70,11 @@ class Representation(ABC):
 
     def select(self, bundle: HiddenStateBundle) -> torch.Tensor:
         """Fetch the pre-pooled activations for this representation."""
-        return bundle.acts[self.name]
+        for key in (self.name, *self._ACT_ALIASES.get(self.name, ())):
+            if key in bundle.acts:
+                return bundle.acts[key]
+        available = ", ".join(sorted(bundle.acts))
+        raise KeyError(
+            f"representation {self.name!r} not found in bundle.pt "
+            f"(available acts keys: {available})"
+        )

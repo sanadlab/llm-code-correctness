@@ -418,9 +418,19 @@ def run_in_domain(args, representation, method) -> List[dict]:
         f"{safe_model_dir(args.model)}/{split_family}/{args.test_dataset}/id/"
         f"{method.name}/{args.fit_framing}/{representation.name}"
     )
+<<<<<<< HEAD
+<<<<<<< HEAD
+    eval_segment = f"val={args.val_framing}__test={args.test_framing}"
+=======
     eval_segment = _eval_segment(args.val_framing, args.test_framing)
     git_sha = git_commit()
     experiment_script = "scripts/experiments/fit_and_score_from_cache.py"
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+    eval_segment = _eval_segment(args.val_framing, args.test_framing)
+    git_sha = git_commit()
+    experiment_script = "scripts/experiments/fit_and_score_from_cache.py"
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 
     folds = args.folds or list(range(_num_folds(Path(args.data_root), args.test_dataset)))
     per_fold = []
@@ -487,10 +497,21 @@ def run_in_domain(args, representation, method) -> List[dict]:
                     "fit_framing": args.fit_framing,
                     "val_framing": args.val_framing,
                     "test_framing": args.test_framing,
+<<<<<<< HEAD
+<<<<<<< HEAD
+                    "git_commit": git_commit(),
+                    "experiment_script": "scripts/experiments/fit_and_score_from_cache.py",
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
                     "n_val": bundle_val.num_samples,
                     "n_test": bundle_test.num_samples,
                     "experiment_script": experiment_script,
                     "git_commit": git_sha,
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
                 },
             )
     return per_fold
@@ -502,9 +523,19 @@ def run_ood(args, representation, method) -> List[dict]:
         f"{safe_model_dir(args.model)}/{split_family}/{args.test_dataset}/id/"
         f"{method.name}/{args.fit_framing}/{representation.name}"
     )
+<<<<<<< HEAD
+<<<<<<< HEAD
+    eval_segment = f"val={args.val_framing}__test={args.test_framing}"
+=======
     eval_segment = _eval_segment(args.val_framing, args.test_framing)
     git_sha = git_commit()
     experiment_script = "scripts/experiments/fit_and_score_from_cache.py"
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+    eval_segment = _eval_segment(args.val_framing, args.test_framing)
+    git_sha = git_commit()
+    experiment_script = "scripts/experiments/fit_and_score_from_cache.py"
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 
     inner_folds = args.inner_folds or list(range(_num_folds(Path(args.data_root), args.fit_source)))
     outer_folds = args.outer_folds or list(range(_num_folds(Path(args.data_root), args.test_dataset)))
@@ -513,12 +544,24 @@ def run_ood(args, representation, method) -> List[dict]:
     # reuse across all inner folds.
     test_bundles = {}
     for outer in outer_folds:
+<<<<<<< HEAD
+<<<<<<< HEAD
+        bundle_test, test_dir = _load_bundle(
+            args.hidden_states_root, args.model, split_family, args.test_dataset,
+            "id", "test", args.test_framing, outer, "fold",
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
         bundle_test, test_dir = _load_icse26_test_bundle(
             args.hidden_states_root,
             args.model,
             args.test_dataset,
             args.test_framing,
             outer,
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
         )
         _assert_representation(bundle_test, test_dir, representation)
         test_bundles[outer] = bundle_test
@@ -526,6 +569,21 @@ def run_ood(args, representation, method) -> List[dict]:
     per_cell = []
     for inner in inner_folds:
         bundle_fit, fit_dir = _load_bundle(
+<<<<<<< HEAD
+<<<<<<< HEAD
+            args.hidden_states_root, args.model, split_family, args.test_dataset,
+            "id", "fit", args.fit_framing, inner, "inner",
+        )
+        _assert_representation(bundle_fit, fit_dir, representation)
+        bundle_val, val_dir = _load_bundle(
+            args.hidden_states_root, args.model, split_family, args.test_dataset,
+            "id", "validate", args.val_framing, inner, "inner",
+        )
+        _assert_representation(bundle_val, val_dir, representation)
+        direction, layers, val_per_layer, selected_layer = _fit_and_select(
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
             args.hidden_states_root, args.model, split_family, None,
             cache_path_distribution(split_family),
             "fit", args.fit_framing, inner, "inner",
@@ -540,6 +598,10 @@ def run_ood(args, representation, method) -> List[dict]:
         bundle_meta = _load_bundle_metadata(fit_dir)
 
         direction, layers, _val_scores_all, val_per_layer, selected_layer = _fit_and_select(
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
             bundle_fit, bundle_val, representation, method
         )
 
@@ -584,11 +646,22 @@ def run_ood(args, representation, method) -> List[dict]:
                         "fit_framing": args.fit_framing,
                         "val_framing": args.val_framing,
                         "test_framing": args.test_framing,
+<<<<<<< HEAD
+<<<<<<< HEAD
+                        "git_commit": git_commit(),
+                        "experiment_script": "scripts/experiments/fit_and_score_from_cache.py",
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
                         "chat_template": bundle_meta.get("chat_template"),
                         "dtype": bundle_meta.get("dtype"),
                         "max_length": bundle_meta.get("max_length"),
                         "experiment_script": experiment_script,
                         "git_commit": git_sha,
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
                     },
                 )
     return per_cell
@@ -715,6 +788,16 @@ def main():
                              "`raw` is the tagless ICSE paper fit stimulus; use sequence_last "
                              "(not response_avg) because raw has no response slice.")
     parser.add_argument("--val-framing", required=True, choices=["neutral", "concept"],
+<<<<<<< HEAD
+<<<<<<< HEAD
+                        help="Framing for the validate split (layer selection).")
+    parser.add_argument("--test-framing", default=None, choices=["neutral", "concept"],
+                        help="Framing for the test split (default: same as --val-framing).")
+    parser.add_argument("--fit-source", required=True, choices=["in-domain", "mbpp", "synthetic"])
+    parser.add_argument("--test-dataset", required=True, choices=["bigcodebench", "humaneval"])
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
                         help="Must match ABLATION_VAL_FRAMINGS in scripts/slurm/ablation_grid.sh.")
     parser.add_argument("--test-framing", default=None, choices=["neutral", "concept"],
                         help="Must match ABLATION_TEST_FRAMINGS in scripts/slurm/ablation_grid.sh.")
@@ -738,6 +821,10 @@ def main():
         help="For mutants fit sources only: validate on this icse26 benchmark instead "
              "of the mutants validate split. Omit to validate on the same dataset as fit.",
     )
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
     parser.add_argument("--data-root", default="dataset/icse26")
     parser.add_argument("--mutants-data-root", default=None)
     parser.add_argument(
@@ -764,6 +851,13 @@ def main():
                         help="Skip if all expected result artifacts already exist.")
     args = parser.parse_args()
     args.hidden_states_root = Path(args.hidden_states_root)
+<<<<<<< HEAD
+<<<<<<< HEAD
+    if args.test_framing is None:
+        args.test_framing = args.val_framing
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
     if args.mutants_data_root is None:
         args.mutants_data_root = _default_mutants_data_root(
             args.mutants_benchmark, confounds=args.mutants_confounds,
@@ -807,6 +901,10 @@ def main():
             parser.error(
                 "--test-dataset mutants_confounds requires --mutants-confounds"
             )
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 
     representation = REPRESENTATIONS[args.representation]
     method = METHODS[args.method]

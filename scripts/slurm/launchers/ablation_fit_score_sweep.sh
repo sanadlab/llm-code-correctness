@@ -1,9 +1,22 @@
 #!/bin/bash
 # Submit the ablation fit+score sweep (stage 2).
 #
+<<<<<<< HEAD
+<<<<<<< HEAD
+# For each model, submits one ablation_fit_score.sbatch job that loops over
+# every (representation, method, fit-framing, val-framing, fit-source,
+# test-dataset) combination for that model: 144 combos per model, 4 models
+# = 576 total.
+=======
 # For each model, submits one ablation_fit_score.sbatch job per dataset-source
 # spec (see scripts/slurm/ablation_grid.sh; same specs as stage 1, one per
 # mutants strategy x MUTANTS_BENCHMARKS entry).
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+# For each model, submits one ablation_fit_score.sbatch job per dataset-source
+# spec (see scripts/slurm/ablation_grid.sh; same specs as stage 1, one per
+# mutants strategy x MUTANTS_BENCHMARKS entry).
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 #
 # Splitting across collaborators: results are keyed by model first
 # (ablation_results/<safe_model>/...), so two people can each run a disjoint
@@ -12,6 +25,13 @@
 #
 # Usage:
 #   bash scripts/slurm/launchers/ablation_fit_score_sweep.sh [--dry-run]
+<<<<<<< HEAD
+<<<<<<< HEAD
+#   MODELS="model/a model/b" bash scripts/slurm/launchers/ablation_fit_score_sweep.sh
+#   MODEL="Qwen/Qwen2.5-Coder-7B-Instruct" bash scripts/slurm/launchers/ablation_fit_score_sweep.sh --local
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 #   bash scripts/slurm/launchers/ablation_fit_score_sweep.sh --paper-configs [--local]
 #   bash scripts/slurm/launchers/ablation_fit_score_sweep.sh --mutants-only [--local]
 #   bash scripts/slurm/launchers/ablation_fit_score_sweep.sh --mutants-confounds [--local]
@@ -45,18 +65,43 @@
 # --val-on-test-dataset (mutants fit sources only): layer selection uses icse26
 # validate for --test-dataset bigcodebench/humaneval instead of mutants validate.
 # Results are written under val_ds=<benchmark>/ in the eval segment path.
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 JOB_SCRIPT="${SCRIPT_DIR}/../jobs/ablation_fit_score.sbatch"
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
 # shellcheck source=../ablation_grid.sh
 source "${SCRIPT_DIR}/../ablation_grid.sh"
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+# shellcheck source=../ablation_grid.sh
+source "${SCRIPT_DIR}/../ablation_grid.sh"
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 
 if [[ -n "${MODELS:-}" ]]; then
     read -r -a MODELS <<< "${MODELS}"
 else
+<<<<<<< HEAD
+<<<<<<< HEAD
+    MODELS=(
+        "Qwen/Qwen2.5-Coder-7B-Instruct"
+        "infly/OpenCoder-8B-Instruct"
+        "codellama/CodeLlama-7b-Instruct-hf"
+        "mistralai/Mistral-7B-Instruct-v0.3"
+    )
+fi
+
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
     MODELS=("${ABLATION_MODELS[@]}")
 fi
 
@@ -64,6 +109,10 @@ BENCHMARKS=("${ABLATION_BENCHMARKS[@]}")
 OOD_SOURCES=("${ABLATION_OOD_SOURCES[@]}")
 TEST_DATASETS=("${ABLATION_TEST_DATASETS[@]}")
 
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 PARTITION="${PARTITION:-compute}"
 ACCOUNT="${ACCOUNT:-}"
 QOS="${QOS:-}"
@@ -71,6 +120,11 @@ CPUS="${CPUS:-8}"
 MEM="${MEM:-64G}"
 TIME="${TIME:-04:00:00}"
 PYTHON_MODULE="${PYTHON_MODULE:-python/3.11.3}"
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 # Stage 2 is CPU-only (reuses cached hidden states; no model load), so no GPU
 # is requested by default. Set GPUS and/or GPU_TYPE to request one, e.g.:
 #   GPU_TYPE=v100 bash ... --mutants-only          # --gres=gpu:v100:1
@@ -78,6 +132,10 @@ PYTHON_MODULE="${PYTHON_MODULE:-python/3.11.3}"
 #   GPUS=1 bash ... --mutants-only                 # --gpus=1 (any GPU on the partition)
 GPUS="${GPUS:-}"
 GPU_TYPE="${GPU_TYPE:-}"
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 
 if [[ -n "${SCRATCH:-}" ]]; then
     ENV_DIR="${ENV_DIR:-${SCRATCH}/envs/llm-code-correctness}"
@@ -86,7 +144,15 @@ else
 fi
 
 HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-hidden_states}"
+<<<<<<< HEAD
+<<<<<<< HEAD
+RESULTS_DIR="${RESULTS_DIR:-ablation_results}"
+=======
 RESULTS_DIR="${RESULTS_DIR:-full_ablation_results}"
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+RESULTS_DIR="${RESULTS_DIR:-full_ablation_results}"
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 DATA_ROOT="${DATA_ROOT:-dataset/icse26}"
 if [[ -n "${MUTANTS_BENCHMARKS:-}" ]]; then
     read -r -a MUTANTS_BENCHMARKS <<< "${MUTANTS_BENCHMARKS}"
@@ -96,16 +162,33 @@ fi
 
 MODE="submit"
 DRY_RUN=0
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 SKIP_EXISTING=1
 MUTANTS_ONLY=0
 MUTANTS_CONFOUNDS=0
 PAPER_CONFIGS=0
 VAL_ON_TEST_DATASET=0
 FIT_SCORE_SCRIPT="${REPO_ROOT}/scripts/experiments/fit_and_score_from_cache.py"
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 for arg in "$@"; do
     case "${arg}" in
         --local) MODE="local" ;;
         --dry-run) DRY_RUN=1 ;;
+<<<<<<< HEAD
+<<<<<<< HEAD
+        *)
+            echo "Unknown option: ${arg}" >&2
+            echo "Usage: $0 [--local | --dry-run]" >&2
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
         --skip-existing) SKIP_EXISTING=1 ;;
         --no-skip-existing) SKIP_EXISTING=0 ;;
         --mutants-only|--mutant-only) MUTANTS_ONLY=1 ;;
@@ -115,11 +198,67 @@ for arg in "$@"; do
         *)
             echo "Unknown option: ${arg}" >&2
             echo "Usage: $0 [--local | --dry-run | --mutants-only | --mutants-confounds | --paper-configs | --val-on-test-dataset | --skip-existing | --no-skip-existing]" >&2
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
             exit 1
             ;;
     esac
 done
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+submit() {
+    local model="$1"
+    local safe_model="${model//\//__}"
+
+    local -a sbatch_args=(
+        --job-name="ablation_fit_score_${safe_model}"
+        --partition="${PARTITION}"
+        --cpus-per-task="${CPUS}"
+        --mem="${MEM}"
+        --time="${TIME}"
+    )
+    [[ -n "${ACCOUNT}" ]] && sbatch_args+=(--account="${ACCOUNT}")
+    [[ -n "${QOS}" ]]     && sbatch_args+=(--qos="${QOS}")
+
+    local -a env_vars=(
+        "MODEL=${model}"
+        "HIDDEN_STATES_ROOT=${HIDDEN_STATES_ROOT}"
+        "RESULTS_DIR=${RESULTS_DIR}"
+        "DATA_ROOT=${DATA_ROOT}"
+        "ENV_DIR=${ENV_DIR}"
+        "PYTHON_MODULE=${PYTHON_MODULE}"
+        "REPO_ROOT=${REPO_ROOT}"
+    )
+    local export_str
+    export_str=$(IFS=,; echo "${env_vars[*]}")
+
+    local -a full_cmd=(sbatch "${sbatch_args[@]}" --export="${export_str}" "${JOB_SCRIPT}")
+    echo "${full_cmd[@]}"
+    if [[ "${DRY_RUN}" -eq 0 ]]; then
+        "${full_cmd[@]}"
+    fi
+}
+
+run_sweep_for_model() {
+    local model="$1"
+    cd "${REPO_ROOT}"
+    export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
+
+    local REPRESENTATIONS=("response_avg" "sequence_last")
+    local METHODS=("mean_diff" "pca")
+    local FIT_FRAMINGS=("function" "neutral" "concept")
+    local VAL_FRAMINGS=("neutral" "concept")
+    local TEST_DATASETS=("bigcodebench" "humaneval")
+    local FIT_SOURCES=("in-domain" "mbpp" "synthetic")
+
+    local n=0
+    local REP METHOD FIT_FRAMING VAL_FRAMING FIT_SOURCE TEST_DATASET
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 if [[ -n "${VAL_DATASET:-}" ]]; then
     VAL_ON_TEST_DATASET=0
 fi
@@ -292,10 +431,38 @@ run_sweep_for_spec() {
     local n=0
     local skipped=0
     local REP METHOD FIT_FRAMING VAL_FRAMING TEST_FRAMING
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
     for REP in "${REPRESENTATIONS[@]}"; do
         for METHOD in "${METHODS[@]}"; do
             for FIT_FRAMING in "${FIT_FRAMINGS[@]}"; do
                 for VAL_FRAMING in "${VAL_FRAMINGS[@]}"; do
+<<<<<<< HEAD
+<<<<<<< HEAD
+                    for FIT_SOURCE in "${FIT_SOURCES[@]}"; do
+                        for TEST_DATASET in "${TEST_DATASETS[@]}"; do
+                            n=$((n + 1))
+                            local -a cmd=(python -u scripts/experiments/fit_and_score_from_cache.py
+                                --model "${model}"
+                                --representation "${REP}"
+                                --method "${METHOD}"
+                                --fit-framing "${FIT_FRAMING}"
+                                --val-framing "${VAL_FRAMING}"
+                                --fit-source "${FIT_SOURCE}"
+                                --test-dataset "${TEST_DATASET}"
+                                --hidden-states-root "${HIDDEN_STATES_ROOT}"
+                                --results-dir "${RESULTS_DIR}"
+                                --data-root "${DATA_ROOT}")
+                            echo "[${n}] ${cmd[*]}"
+                            if [[ "${DRY_RUN}" -eq 0 ]]; then
+                                "${cmd[@]}"
+                            fi
+                        done
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
                     for TEST_FRAMING in "${TEST_FRAMINGS[@]}"; do
                         if [[ "${PAPER_CONFIGS}" -eq 1 ]] && ablation_skip_non_paper_combo \
                             "${FIT_FRAMING}" "${VAL_FRAMING}" "${TEST_FRAMING}"; then
@@ -337,11 +504,24 @@ run_sweep_for_spec() {
                         if [[ "${DRY_RUN}" -eq 0 ]]; then
                             "${cmd[@]}"
                         fi
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
                     done
                 done
             done
         done
     done
+<<<<<<< HEAD
+<<<<<<< HEAD
+    echo "Model ${model}: ${n} combinations"
+}
+
+run_sweep() {
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
     echo "Model ${model} fit_source=${fit_source} test_dataset=${test_dataset}: ${n} combinations (${skipped} skipped as irrelevant)"
 }
 
@@ -393,17 +573,33 @@ run_sweep() {
         return
     fi
 
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
     if [[ -n "${MODEL:-}" ]]; then
         run_sweep_for_model "${MODEL}"
         return
     fi
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
     local model
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+    local model
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
     for model in "${MODELS[@]}"; do
         run_sweep_for_model "${model}"
     done
 }
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 common_export_vars() {
     local model="$1"
     printf '%s\n' \
@@ -420,6 +616,10 @@ common_export_vars() {
         "VAL_DATASET=${VAL_DATASET:-}"
 }
 
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 if [[ "${MODE}" == "submit" ]]; then
     if [[ -z "${SCRATCH:-}" ]]; then
         echo "Error: SCRATCH is not set." >&2
@@ -434,6 +634,12 @@ if [[ "${MODE}" == "submit" ]]; then
     cd "${REPO_ROOT}"
 
     for model in "${MODELS[@]}"; do
+<<<<<<< HEAD
+<<<<<<< HEAD
+        submit "${model}"
+=======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
         safe_model="${model//\//__}"
         mapfile -t base_vars < <(common_export_vars "${model}")
         if [[ "${MUTANTS_ONLY}" -eq 0 && "${MUTANTS_CONFOUNDS}" -eq 0 ]]; then
@@ -466,6 +672,10 @@ if [[ "${MODE}" == "submit" ]]; then
                 done
             done
         done
+<<<<<<< HEAD
+>>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
     done
 else
     run_sweep
