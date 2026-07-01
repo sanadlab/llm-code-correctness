@@ -83,4 +83,12 @@ code-reorg-results/
 code-reorg-vectors/
 
 #visualization interpretation results
-/analysis/
+/analysis/Configurations_analysis/output/
+/analysis/direction_compare
+/analysis/ablation/
+
+/vectors/codellama__CodeLlama-7b-Instruct-hf/
+/vectors/infly__OpenCoder-8B-Instruct/
+/vectors/mistralai__Mistral-7B-Instruct-v0.3/
+/vectors/Qwen__Qwen2.5-Coder-7B-Instruct/
+
