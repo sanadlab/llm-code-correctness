@@ -5,6 +5,9 @@ init.txt
 data/
 outputs/
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 results_icse26_val_1_4/
 dataset/bigcodebench/frozen.jsonl
 dataset/bigcodebench/intermediate/*/
@@ -21,10 +24,15 @@ dataset/bigcodebench/phase2/
 # Hide the decompressed working tree; keep the bundle itself tracked.
 dataset/icse26/
 !dataset/icse26.tar.zst
+<<<<<<< HEAD
 =======
 /dataset
 
 >>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+/dataset
+
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 
 # Third-party submodule content is fetched via `make setup`
 # (git submodules handle this, but just in case)
@@ -99,6 +107,9 @@ code-reorg-vectors/
 
 #visualization interpretation results
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 /analysis/Configurations_analysis/output/
 /analysis/direction_compare
 /analysis/ablation/
@@ -108,7 +119,10 @@ code-reorg-vectors/
 /vectors/mistralai__Mistral-7B-Instruct-v0.3/
 /vectors/Qwen__Qwen2.5-Coder-7B-Instruct/
 
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
 /analysis/
 
 #maintenance scripts
@@ -122,4 +136,7 @@ code-reorg-vectors/
 /rq2_mutants_confounds_he_based_ablation_results.tar.zst
 /dataset.tar.zst
 /hidden_states.tar.zst
+<<<<<<< HEAD
 >>>>>>> 72a481761d3ed9f7c2b5e2e55e6cf321a1c8c815
+=======
+>>>>>>> 6f586c9d1689fc0a6a50b0d8be376b06f4453ed3
