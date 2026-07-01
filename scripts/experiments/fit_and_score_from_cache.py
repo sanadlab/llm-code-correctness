@@ -28,13 +28,15 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Sequence
+
+import torch
 
 from scripts.experiments._common import (
     METHODS,
     REPRESENTATIONS,
-    one_of_n_accuracy,
-    pairwise_accuracy,
+    per_layer_split_metrics,
+    select_layer_by_metric,
 )
 from src.hidden_states import HiddenStateBundle, bundle_output_dir, git_commit, safe_model_dir
 from src.vectors.projection import project_all_layers
@@ -108,30 +110,60 @@ def _fit_and_select(
 
     acts_val = representation.select(bundle_val)
     layers, val_scores_all = project_all_layers(direction, acts_val)
-    val_per_layer: Dict[int, float] = {}
-    for j, layer in enumerate(layers):
-        val_per_layer[layer] = pairwise_accuracy(
-            val_scores_all[:, j], bundle_val.labels, bundle_val.task_ids
-        )
-    # Python's max() returns the first item on ties; iterating from the
-    # deepest layer down replicates the paper's tie-break (see
-    # _common.run_cross_validation for the full explanation).
-    ordered = sorted(val_per_layer.keys(), reverse=True)
-    selected_layer = max(ordered, key=lambda l: val_per_layer[l])
-    return direction, layers, val_per_layer, selected_layer
+    val_per_layer = per_layer_split_metrics(
+        val_scores_all, layers, bundle_val.labels, bundle_val.task_ids
+    )
+    selected_layer = select_layer_by_metric(val_per_layer, "pairwise_acc")
+    return direction, layers, val_scores_all, val_per_layer, selected_layer
 
 
 def _score_test(direction, layers, representation, bundle_test: HiddenStateBundle):
     acts_test = representation.select(bundle_test)
     _, test_scores_all = project_all_layers(direction, acts_test)
-    test_per_layer: Dict[int, Dict[str, float]] = {}
-    for j, layer in enumerate(layers):
-        col = test_scores_all[:, j]
-        test_per_layer[layer] = {
-            "one_of_4": one_of_n_accuracy(col, bundle_test.labels, bundle_test.task_ids),
-            "pairwise_acc": pairwise_accuracy(col, bundle_test.labels, bundle_test.task_ids),
-        }
-    return test_per_layer
+    test_per_layer = per_layer_split_metrics(
+        test_scores_all, layers, bundle_test.labels, bundle_test.task_ids
+    )
+    return test_scores_all, test_per_layer
+
+
+def _stringify_per_layer(per_layer: Dict[int, Dict[str, float]]) -> dict:
+    return {str(k): v for k, v in per_layer.items()}
+
+
+def _build_results_payload(
+    *,
+    cell_ids: dict,
+    selected_layer: int,
+    val_per_layer: Dict[int, Dict[str, float]],
+    test_per_layer: Dict[int, Dict[str, float]],
+    metadata: dict,
+) -> dict:
+    sel_val = val_per_layer[selected_layer]
+    sel_test = test_per_layer[selected_layer]
+    best_layer = select_layer_by_metric(test_per_layer, "one_of_4")
+    return {
+        **cell_ids,
+        "selected_layer": selected_layer,
+        "layer_selection_metric": "pairwise_acc",
+        "val_per_layer": _stringify_per_layer(val_per_layer),
+        "test_per_layer": _stringify_per_layer(test_per_layer),
+        "val_at_selected_layer": dict(sel_val),
+        "test_at_selected_layer": dict(sel_test),
+        "test_theoretical_best_layer": {
+            "layer": best_layer,
+            **test_per_layer[best_layer],
+        },
+        "val_pairwise_acc": sel_val["pairwise_acc"],
+        "test_one_of_4": sel_test["one_of_4"],
+        "test_pairwise": sel_test["pairwise_acc"],
+        **metadata,
+    }
+
+
+def _cell_dir(results_dir: Path, common_path: str, eval_segment: str, cell_name: str) -> Path:
+    res_dir = Path(results_dir) / common_path / eval_segment / cell_name
+    res_dir.mkdir(parents=True, exist_ok=True)
+    return res_dir
 
 
 def _write_results(
@@ -141,10 +173,98 @@ def _write_results(
     cell_name: str,
     payload: dict,
 ) -> None:
-    res_dir = Path(results_dir) / common_path / eval_segment / cell_name
-    res_dir.mkdir(parents=True, exist_ok=True)
+    res_dir = _cell_dir(results_dir, common_path, eval_segment, cell_name)
     with open(res_dir / "results.json", "w") as f:
         json.dump(payload, f, indent=2)
+
+
+def _write_detailed(
+    results_dir: Path,
+    common_path: str,
+    eval_segment: str,
+    cell_name: str,
+    *,
+    cell_ids: dict,
+    layers: Sequence[int],
+    bundle_val: HiddenStateBundle,
+    bundle_test: HiddenStateBundle,
+    val_scores_all: torch.Tensor,
+    test_scores_all: torch.Tensor,
+) -> None:
+    res_dir = _cell_dir(results_dir, common_path, eval_segment, cell_name)
+    detailed = {
+        **cell_ids,
+        "layers": list(layers),
+        "val": {
+            "sample_ids": list(bundle_val.sample_ids),
+            "task_ids": list(bundle_val.task_ids),
+            "labels": bundle_val.labels.tolist(),
+            "scores": val_scores_all.float().tolist(),
+        },
+        "test": {
+            "sample_ids": list(bundle_test.sample_ids),
+            "task_ids": list(bundle_test.task_ids),
+            "labels": bundle_test.labels.tolist(),
+            "scores": test_scores_all.float().tolist(),
+        },
+    }
+    with open(res_dir / "detailed.json", "w") as f:
+        json.dump(detailed, f)
+
+
+def _metadata_payload(args, representation, method, fit_source: str) -> dict:
+    return {
+        "model": args.model,
+        "test_dataset": args.test_dataset,
+        "fit_source": fit_source,
+        "method": method.name,
+        "representation": representation.name,
+        "fit_framing": args.fit_framing,
+        "val_framing": args.val_framing,
+        "test_framing": args.test_framing,
+        "git_commit": git_commit(),
+        "experiment_script": "scripts/experiments/fit_and_score_from_cache.py",
+    }
+
+
+def _persist_cell(
+    results_dir: Path,
+    common_path: str,
+    eval_segment: str,
+    cell_name: str,
+    *,
+    cell_ids: dict,
+    layers: Sequence[int],
+    bundle_val: HiddenStateBundle,
+    bundle_test: HiddenStateBundle,
+    val_scores_all: torch.Tensor,
+    test_scores_all: torch.Tensor,
+    selected_layer: int,
+    val_per_layer: Dict[int, Dict[str, float]],
+    test_per_layer: Dict[int, Dict[str, float]],
+    metadata: dict,
+) -> dict:
+    payload = _build_results_payload(
+        cell_ids=cell_ids,
+        selected_layer=selected_layer,
+        val_per_layer=val_per_layer,
+        test_per_layer=test_per_layer,
+        metadata=metadata,
+    )
+    _write_results(results_dir, common_path, eval_segment, cell_name, payload)
+    _write_detailed(
+        results_dir,
+        common_path,
+        eval_segment,
+        cell_name,
+        cell_ids=cell_ids,
+        layers=layers,
+        bundle_val=bundle_val,
+        bundle_test=bundle_test,
+        val_scores_all=val_scores_all,
+        test_scores_all=test_scores_all,
+    )
+    return payload
 
 
 def run_in_domain(args, representation, method) -> List[dict]:
@@ -154,6 +274,7 @@ def run_in_domain(args, representation, method) -> List[dict]:
         f"{method.name}/{args.fit_framing}/{representation.name}"
     )
     eval_segment = f"val={args.val_framing}__test={args.test_framing}"
+    metadata = _metadata_payload(args, representation, method, "in-domain")
 
     folds = args.folds or list(range(_num_folds(Path(args.data_root), args.test_dataset)))
     per_fold = []
@@ -174,16 +295,18 @@ def run_in_domain(args, representation, method) -> List[dict]:
         )
         _assert_representation(bundle_test, test_dir, representation)
 
-        direction, layers, val_per_layer, selected_layer = _fit_and_select(
+        direction, layers, val_scores_all, val_per_layer, selected_layer = _fit_and_select(
             bundle_fit, bundle_val, representation, method
         )
-        test_per_layer = _score_test(direction, layers, representation, bundle_test)
+        test_scores_all, test_per_layer = _score_test(
+            direction, layers, representation, bundle_test
+        )
         sel_test = test_per_layer[selected_layer]
 
         result = {
             "fold": fold,
             "selected_layer": selected_layer,
-            "val_pairwise_acc": val_per_layer[selected_layer],
+            "val_pairwise_acc": val_per_layer[selected_layer]["pairwise_acc"],
             "test_one_of_4": sel_test["one_of_4"],
             "test_pairwise": sel_test["pairwise_acc"],
         }
@@ -192,21 +315,21 @@ def run_in_domain(args, representation, method) -> List[dict]:
               f"test_1of4={sel_test['one_of_4']:.3f} test_pairwise={sel_test['pairwise_acc']:.3f}")
 
         if args.results_dir:
-            _write_results(
-                Path(args.results_dir), common_path, eval_segment, f"fold_{fold}",
-                {
-                    **result,
-                    "model": args.model,
-                    "test_dataset": args.test_dataset,
-                    "fit_source": "in-domain",
-                    "method": method.name,
-                    "representation": representation.name,
-                    "fit_framing": args.fit_framing,
-                    "val_framing": args.val_framing,
-                    "test_framing": args.test_framing,
-                    "git_commit": git_commit(),
-                    "experiment_script": "scripts/experiments/fit_and_score_from_cache.py",
-                },
+            _persist_cell(
+                Path(args.results_dir),
+                common_path,
+                eval_segment,
+                f"fold_{fold}",
+                cell_ids={"fold": fold},
+                layers=layers,
+                bundle_val=bundle_val,
+                bundle_test=bundle_test,
+                val_scores_all=val_scores_all,
+                test_scores_all=test_scores_all,
+                selected_layer=selected_layer,
+                val_per_layer=val_per_layer,
+                test_per_layer=test_per_layer,
+                metadata=metadata,
             )
     return per_fold
 
@@ -218,6 +341,7 @@ def run_ood(args, representation, method) -> List[dict]:
         f"{method.name}/{args.fit_framing}/{representation.name}"
     )
     eval_segment = f"val={args.val_framing}__test={args.test_framing}"
+    metadata = _metadata_payload(args, representation, method, args.fit_source)
 
     inner_folds = args.inner_folds or list(range(_num_folds(Path(args.data_root), args.fit_source)))
     outer_folds = args.outer_folds or list(range(_num_folds(Path(args.data_root), args.test_dataset)))
@@ -245,19 +369,21 @@ def run_ood(args, representation, method) -> List[dict]:
             "id", "validate", args.val_framing, inner, "inner",
         )
         _assert_representation(bundle_val, val_dir, representation)
-        direction, layers, val_per_layer, selected_layer = _fit_and_select(
+        direction, layers, val_scores_all, val_per_layer, selected_layer = _fit_and_select(
             bundle_fit, bundle_val, representation, method
         )
 
         for outer in outer_folds:
-            test_per_layer = _score_test(direction, layers, representation, test_bundles[outer])
+            test_scores_all, test_per_layer = _score_test(
+                direction, layers, representation, test_bundles[outer]
+            )
             sel_test = test_per_layer[selected_layer]
 
             result = {
                 "outer_fold": outer,
                 "inner_fold": inner,
                 "selected_layer": selected_layer,
-                "val_pairwise_acc": val_per_layer[selected_layer],
+                "val_pairwise_acc": val_per_layer[selected_layer]["pairwise_acc"],
                 "test_one_of_4": sel_test["one_of_4"],
                 "test_pairwise": sel_test["pairwise_acc"],
             }
@@ -266,22 +392,21 @@ def run_ood(args, representation, method) -> List[dict]:
                   f"test_1of4={sel_test['one_of_4']:.3f} test_pairwise={sel_test['pairwise_acc']:.3f}")
 
             if args.results_dir:
-                _write_results(
-                    Path(args.results_dir), common_path, eval_segment,
+                _persist_cell(
+                    Path(args.results_dir),
+                    common_path,
+                    eval_segment,
                     f"outer_{outer}_inner_{inner}",
-                    {
-                        **result,
-                        "model": args.model,
-                        "test_dataset": args.test_dataset,
-                        "fit_source": args.fit_source,
-                        "method": method.name,
-                        "representation": representation.name,
-                        "fit_framing": args.fit_framing,
-                        "val_framing": args.val_framing,
-                        "test_framing": args.test_framing,
-                        "git_commit": git_commit(),
-                        "experiment_script": "scripts/experiments/fit_and_score_from_cache.py",
-                    },
+                    cell_ids={"outer_fold": outer, "inner_fold": inner},
+                    layers=layers,
+                    bundle_val=bundle_val,
+                    bundle_test=test_bundles[outer],
+                    val_scores_all=val_scores_all,
+                    test_scores_all=test_scores_all,
+                    selected_layer=selected_layer,
+                    val_per_layer=val_per_layer,
+                    test_per_layer=test_per_layer,
+                    metadata=metadata,
                 )
     return per_cell
 

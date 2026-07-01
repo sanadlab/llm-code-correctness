@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-<<<<<<< HEAD
 """Core pair-diff cosine analysis: hidden states vs. learned reading direction.
 
 Purpose
@@ -49,9 +48,6 @@ Usage
         --benchmark bigcodebench --split test --fold 0 \\
         --layers all --top-percentile --percentile 90
 """
-=======
-"""Visualize cosine similarity between task pair differences and learned reading direction."""
->>>>>>> remotes/origin/sam/accuracy-across-setups
 
 from __future__ import annotations
 
@@ -62,14 +58,9 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
-<<<<<<< HEAD
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
-=======
-from typing import Dict, Iterable, List, Optional, Sequence
-
->>>>>>> remotes/origin/sam/accuracy-across-setups
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
@@ -108,10 +99,7 @@ class Args:
     results_root: Path
     model: str
     dataset_source: str
-<<<<<<< HEAD
     vectors_dataset_source: str
-=======
->>>>>>> remotes/origin/sam/accuracy-across-setups
     benchmark: str
     distribution: str
     split: str
@@ -142,7 +130,6 @@ def parse_args() -> Args:
     parser.add_argument("--vectors-root", default="vectors")
     parser.add_argument("--results-root", default="results")
     parser.add_argument("--model", required=True)
-<<<<<<< HEAD
     parser.add_argument(
         "--dataset-source",
         default="icse26",
@@ -153,13 +140,9 @@ def parse_args() -> Args:
         default=None,
         help=(
             "Split family for direction vectors in vectors/ "
-            "(default: same as --dataset-source). "
-            "For icse26_val_1_4, use icse26."
+            "(default: same as --dataset-source)."
         ),
     )
-=======
-    parser.add_argument("--dataset-source", default="icse26")
->>>>>>> remotes/origin/sam/accuracy-across-setups
     parser.add_argument("--benchmark", required=True)
     parser.add_argument("--distribution", default="id")
     parser.add_argument("--split", default="test")
@@ -198,7 +181,6 @@ def parse_args() -> Args:
         action="store_true",
         help="Overlay the selected/specified layer across multiple folds.",
     )
-<<<<<<< HEAD
     parser.add_argument(
         "--top-percentile",
         action="store_true",
@@ -218,20 +200,13 @@ def parse_args() -> Args:
     parser.add_argument("--output-dir", default="outputs/phase2_task2_cosine")
     args = parser.parse_args()
     vectors_dataset_source = args.vectors_dataset_source or args.dataset_source
-=======
-    parser.add_argument("--output-dir", default="outputs/phase2_task2_cosine")
-    args = parser.parse_args()
->>>>>>> remotes/origin/sam/accuracy-across-setups
     return Args(
         hidden_states_root=Path(args.hidden_states_root),
         vectors_root=Path(args.vectors_root),
         results_root=Path(args.results_root),
         model=args.model,
         dataset_source=args.dataset_source,
-<<<<<<< HEAD
         vectors_dataset_source=vectors_dataset_source,
-=======
->>>>>>> remotes/origin/sam/accuracy-across-setups
         benchmark=args.benchmark,
         distribution=args.distribution,
         split=args.split,
@@ -248,12 +223,9 @@ def parse_args() -> Args:
         overlay=args.overlay,
         folds=args.folds,
         overlay_folds=args.overlay_folds,
-<<<<<<< HEAD
         top_percentile=args.top_percentile,
         top_percentile_val_test_overlay=args.top_percentile_val_test_overlay,
         percentile=args.percentile,
-=======
->>>>>>> remotes/origin/sam/accuracy-across-setups
     )
 
 
@@ -280,11 +252,7 @@ def load_bundle(args: Args) -> HiddenStateBundle:
 def load_direction(args: Args) -> Direction:
     common = vector_common_path(
         args.model,
-<<<<<<< HEAD
         args.vectors_dataset_source,
-=======
-        args.dataset_source,
->>>>>>> remotes/origin/sam/accuracy-across-setups
         args.benchmark,
         args.distribution,
         args.method,
@@ -295,12 +263,8 @@ def load_direction(args: Args) -> Direction:
     if not direction_path.exists():
         raise FileNotFoundError(
             f"Direction file not found: {direction_path}\n"
-<<<<<<< HEAD
             f"Check --vectors-root, --vectors-dataset-source, --model, --benchmark, "
             f"--distribution, --method, --fit-framing, --representation, --fold"
-=======
-            f"Check --vectors-root, --model, --dataset-source, --benchmark, --distribution, --method, --fit-framing, --representation, --fold"
->>>>>>> remotes/origin/sam/accuracy-across-setups
         )
     return Direction.load(direction_path)
 
@@ -332,7 +296,6 @@ def load_selected_layer(args: Args) -> int:
     return int(data["selected_layer"])
 
 
-<<<<<<< HEAD
 def load_fold_result_metrics(args: Args, fold: int) -> Dict[str, Dict[int, Dict[str, float]]]:
     common = vector_common_path(
         args.model,
@@ -537,8 +500,6 @@ def plot_top_percentile_val_test_overlay(
     logger.info("Wrote top-percentile val/test cosine overlay plot to %s", fig_path)
 
 
-=======
->>>>>>> remotes/origin/sam/accuracy-across-setups
 def resolve_layers(args: Args, num_layers: int, direction: Direction) -> List[int]:
     if args.layers == "all":
         return sorted(direction.layers)
@@ -624,7 +585,6 @@ def compute_cosine_entries_for_fold(
     return compute_cosine_entries(local_args, bundle, direction, layers)
 
 
-<<<<<<< HEAD
 def compute_cosine_entries_for_split(
     args: Args,
     split: str,
@@ -640,19 +600,12 @@ def compute_cosine_entries_for_split(
     return compute_cosine_entries(local_args, bundle, direction, layers)
 
 
-=======
->>>>>>> remotes/origin/sam/accuracy-across-setups
 def plot_folds_overlay(
     args: Args,
     entries_by_fold: Dict[int, List[Dict[str, object]]],
     out_dir: Path,
 ) -> None:
-<<<<<<< HEAD
     
-=======
-    import numpy as np
-
->>>>>>> remotes/origin/sam/accuracy-across-setups
     fig, ax = plt.subplots(figsize=(9, 6))
     colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     for i, (fold, entries) in enumerate(sorted(entries_by_fold.items())):
@@ -927,7 +880,6 @@ def main() -> None:
         with open(summary_path, "w") as f:
             json.dump(summary_data, f, indent=2)
         plot_folds_overlay(args, entries_by_fold, out_dir)
-<<<<<<< HEAD
         if args.top_percentile:
             for fold in sorted(entries_by_fold):
                 local_args = replace_fold(args, fold)
@@ -945,14 +897,11 @@ def main() -> None:
                 plot_top_percentile_layers(
                     local_args, top_entries, metrics, out_dir, experiment_selected
                 )
-=======
->>>>>>> remotes/origin/sam/accuracy-across-setups
         logger.info("Wrote overlay-folds CSV to %s", csv_path)
         logger.info("Wrote overlay-folds summary to %s", summary_path)
         logger.info("Wrote overlay-folds plot to %s", out_dir)
         return
 
-<<<<<<< HEAD
     out_dir = build_output_dir(args)
     if (
         args.top_percentile_val_test_overlay
@@ -981,8 +930,6 @@ def main() -> None:
         logger.info("Wrote plots to %s", out_dir)
         return
 
-=======
->>>>>>> remotes/origin/sam/accuracy-across-setups
     bundle = load_bundle(args)
     if args.representation not in bundle.acts:
         raise KeyError(
@@ -991,17 +938,12 @@ def main() -> None:
     direction = load_direction(args)
     layers = resolve_layers(args, bundle[args.representation].shape[1], direction)
     entries = compute_cosine_entries(args, bundle, direction, layers)
-<<<<<<< HEAD
-=======
-    out_dir = build_output_dir(args)
->>>>>>> remotes/origin/sam/accuracy-across-setups
     csv_path = out_dir / "cosine_similarities.csv"
     summary_path = out_dir / "summary.json"
     write_csv(entries, csv_path)
     summary_data = summarize(entries, layers)
     with open(summary_path, "w") as f:
         json.dump(summary_data, f, indent=2)
-<<<<<<< HEAD
     #plot_layer_histograms(args, entries, out_dir)
     if args.overlay:
         plot_layers_overlay(args, entries, out_dir)
@@ -1036,11 +978,6 @@ def main() -> None:
             )
         else:
             logger.warning("No top-percentile layers found for val/test overlay on fold %s", args.fold)
-=======
-    plot_layer_histograms(args, entries, out_dir)
-    if args.overlay:
-        plot_layers_overlay(args, entries, out_dir)
->>>>>>> remotes/origin/sam/accuracy-across-setups
     logger.info("Wrote CSV to %s", csv_path)
     logger.info("Wrote summary to %s", summary_path)
     logger.info("Wrote plots to %s", out_dir)

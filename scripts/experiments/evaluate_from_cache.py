@@ -5,10 +5,9 @@ validation split with 4 candidates per task) and want per-layer accuracy
 results written in the same ``results.json`` format as the live experiments.
 
 Typical workflow for ``icse26_val_1_4``:
-  1. Reuse existing fit directions from ``vectors/`` (fit split unchanged).
-  2. Load the new 4-option validation bundles from ``hidden_states/``.
-  3. Optionally load the unchanged test bundles.
-  4. Write ``results.json`` with both ``one_of_4`` and ``pairwise_acc`` on val.
+  1. Cache fit/validate/test bundles with ``cache_hidden_states.py``.
+  2. Fit directions and score with ``fit_vectors_from_cache.py``.
+  3. Or use this script alone when directions already exist under ``vectors/``.
 
 Usage:
     python scripts/experiments/evaluate_from_cache.py \\

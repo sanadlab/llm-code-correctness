@@ -1,5 +1,5 @@
 #!/bin/bash
-# Launcher for validation/test 1-of-4 scoring from cached hidden states.
+# Launcher for fit-vectors + score from cached hidden states.
 #
 # Submits scripts/slurm/jobs/val_one_of_4_from_cache.sbatch with sensible
 # defaults, or runs locally with --local. CPU-only; no model load.
@@ -31,10 +31,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 JOB_SCRIPT="${SCRIPT_DIR}/../jobs/val_one_of_4_from_cache.sbatch"
 
 # ---- defaults ---------------------------------------------------------------
-MODEL="${MODEL:-Qwen/Qwen2.5-Coder-7B-Instruct}"
+MODEL="${MODEL:-codellama/CodeLlama-7b-Instruct-hf}"
 BENCHMARK="${BENCHMARK:-bigcodebench}"
 SPLIT_FAMILY="${SPLIT_FAMILY:-icse26_val_1_4}"
-VECTORS_SPLIT_FAMILY="${VECTORS_SPLIT_FAMILY:-icse26}"
 DISTRIBUTION="${DISTRIBUTION:-id}"
 HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-}"
 VECTORS_ROOT="${VECTORS_ROOT:-vectors}"
@@ -54,13 +53,8 @@ QOS="${QOS:-}"
 CPUS="${CPUS:-8}"
 MEM="${MEM:-64G}"
 TIME="${TIME:-02:00:00}"
-PYTHON_MODULE="${PYTHON_MODULE:-python/3.11.3}"
-
-if [[ -n "${SCRATCH:-}" ]]; then
-    ENV_DIR="${ENV_DIR:-${SCRATCH}/envs/llm-code-correctness}"
-else
-    ENV_DIR="${ENV_DIR:-}"
-fi
+ENV_DIR="${ENV_DIR:-/scratch/re2230/envs/llm-code-correctness}"
+PYTHON_BIN="${PYTHON_BIN:-${ENV_DIR}/bin/python}"
 
 MODE="submit"
 DRY_RUN=0
@@ -71,16 +65,15 @@ usage() {
     cat <<'EOF'
 Usage: scripts/slurm/launchers/val_one_of_4_from_cache.sh [options]
 
-Score validation and test 1-of-4 from cached hidden states.
+Score validate/test from cached hidden states after fitting vectors on cached fit bundles.
 
 Experiment options:
-  --model NAME              HuggingFace model id              (default: Qwen/Qwen2.5-Coder-7B-Instruct)
+  --model NAME              HuggingFace model id              (default: codellama/CodeLlama-7b-Instruct-hf)
   --benchmark NAME          bigcodebench | humaneval          (default: bigcodebench)
-  --split-family NAME       Cached bundle split family        (default: icse26_val_1_4)
-  --vectors-split-family N  Fit-direction split family        (default: icse26)
+  --split-family NAME       Split family for bundles/vectors/results (default: icse26_val_1_4)
   --distribution NAME       Distribution id                   (default: id)
   --hidden-states-root PATH Hidden-state cache root           (default: python script default)
-  --vectors-root PATH       Direction vectors root            (default: vectors)
+  --vectors-root PATH       Direction vectors output root     (default: vectors)
   --results-root PATH       Results output root               (default: results_icse26_val_1_4)
   --representation NAME     response_avg | sequence_last | ... (default: response_avg)
   --method NAME             mean_diff | pca                   (default: mean_diff)
@@ -96,8 +89,8 @@ SLURM options:
   --cpus N --mem SIZE --time HH:MM:SS --dependency STR
 
 Environment options:
-  --env-dir PATH            Virtualenv to activate            (default: $SCRATCH/envs/llm-code-correctness)
-  --python-module NAME      Module to load                    (default: python/3.11.3)
+  --env-dir PATH            Virtualenv root                   (default: /scratch/re2230/envs/llm-code-correctness)
+  --python-bin PATH         Python interpreter                (default: <env-dir>/bin/python)
 
   --local                   Run locally instead of submitting
   --dry-run                 Print sbatch command without submitting
@@ -110,7 +103,6 @@ while [[ $# -gt 0 ]]; do
         --model)                 MODEL="$2";                 shift 2 ;;
         --benchmark)             BENCHMARK="$2";             shift 2 ;;
         --split-family)          SPLIT_FAMILY="$2";          shift 2 ;;
-        --vectors-split-family)  VECTORS_SPLIT_FAMILY="$2";  shift 2 ;;
         --distribution)          DISTRIBUTION="$2";          shift 2 ;;
         --hidden-states-root)    HIDDEN_STATES_ROOT="$2";    shift 2 ;;
         --vectors-root)          VECTORS_ROOT="$2";          shift 2 ;;
@@ -129,8 +121,8 @@ while [[ $# -gt 0 ]]; do
         --cpus)                  CPUS="$2";                  shift 2 ;;
         --mem)                   MEM="$2";                   shift 2 ;;
         --time)                  TIME="$2";                  shift 2 ;;
-        --env-dir)               ENV_DIR="$2";               shift 2 ;;
-        --python-module)         PYTHON_MODULE="$2";         shift 2 ;;
+        --env-dir)               ENV_DIR="$2"; PYTHON_BIN="${ENV_DIR}/bin/python"; shift 2 ;;
+        --python-bin)            PYTHON_BIN="$2";            shift 2 ;;
         --dependency)            DEPENDENCY="$2";            shift 2 ;;
         --local)                 MODE="local";               shift ;;
         --dry-run)               DRY_RUN=1;                  shift ;;
@@ -148,14 +140,19 @@ fi
 run_for_model() {
     local model="$1"
     cd "${REPO_ROOT}"
+    export PYTHONUNBUFFERED=1
     export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 
+    if [[ ! -x "${PYTHON_BIN}" ]]; then
+        echo "Error: python not found at ${PYTHON_BIN}" >&2
+        exit 1
+    fi
+
     local -a cmd=(
-        python -u scripts/analysis/val_one_of_4_from_cache.py
+        "${PYTHON_BIN}" -u scripts/experiments/fit_vectors_from_cache.py
         --model "${model}"
         --benchmark "${BENCHMARK}"
         --split-family "${SPLIT_FAMILY}"
-        --vectors-split-family "${VECTORS_SPLIT_FAMILY}"
         --distribution "${DISTRIBUTION}"
         --vectors-root "${VECTORS_ROOT}"
         --results-root "${RESULTS_ROOT}"
@@ -199,7 +196,6 @@ submit_for_model() {
         "MODEL=${model}"
         "BENCHMARK=${BENCHMARK}"
         "SPLIT_FAMILY=${SPLIT_FAMILY}"
-        "VECTORS_SPLIT_FAMILY=${VECTORS_SPLIT_FAMILY}"
         "DISTRIBUTION=${DISTRIBUTION}"
         "VECTORS_ROOT=${VECTORS_ROOT}"
         "RESULTS_ROOT=${RESULTS_ROOT}"
@@ -211,8 +207,7 @@ submit_for_model() {
         "LAYER_SELECTION_METRIC=${LAYER_SELECTION_METRIC}"
         "FOLDS=${FOLDS}"
         "SKIP_TEST=${SKIP_TEST}"
-        "ENV_DIR=${ENV_DIR}"
-        "PYTHON_MODULE=${PYTHON_MODULE}"
+        "PYTHON_BIN=${PYTHON_BIN}"
         "REPO_ROOT=${REPO_ROOT}"
     )
     if [[ -n "${HIDDEN_STATES_ROOT}" ]]; then
@@ -237,16 +232,8 @@ if [[ "${MODE}" == "local" ]]; then
 fi
 
 # ---- submit mode ------------------------------------------------------------
-if [[ -z "${SCRATCH:-}" ]]; then
-    echo "Error: SCRATCH is not set." >&2
-    exit 1
-fi
-if [[ -z "${ENV_DIR}" ]]; then
-    echo "Error: ENV_DIR is not set." >&2
-    exit 1
-fi
-if [[ ! -d "${ENV_DIR}" ]]; then
-    echo "Error: virtualenv not found: ${ENV_DIR}" >&2
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+    echo "Error: python not found at ${PYTHON_BIN}" >&2
     exit 1
 fi
 
@@ -254,12 +241,11 @@ mkdir -p "${REPO_ROOT}/logs/slurm"
 cd "${REPO_ROOT}"
 
 echo "================================================================"
-echo "Validation 1-of-4 from cache"
+echo "Validation 1-of-4 from cache (fit vectors + score)"
 echo "================================================================"
 echo "  models:               ${MODELS_ARRAY[*]}"
 echo "  benchmark:            ${BENCHMARK}"
 echo "  split-family:         ${SPLIT_FAMILY}"
-echo "  vectors-split-family: ${VECTORS_SPLIT_FAMILY}"
 echo "  hidden-states-root:   ${HIDDEN_STATES_ROOT:-<python default>}"
 echo "  vectors-root:         ${VECTORS_ROOT}"
 echo "  results-root:         ${RESULTS_ROOT}"
@@ -270,7 +256,7 @@ echo "  layer metric:         ${LAYER_SELECTION_METRIC}"
 echo "  folds:                ${FOLDS}"
 echo "  skip-test:            ${SKIP_TEST}"
 echo "  resources:            ${PARTITION}, ${CPUS}×CPU, ${MEM}, ${TIME}"
-echo "  env:                  ${ENV_DIR}"
+echo "  python:               ${PYTHON_BIN}"
 if [[ -n "${DEPENDENCY}" ]]; then
     echo "  dependency:           ${DEPENDENCY}"
 fi

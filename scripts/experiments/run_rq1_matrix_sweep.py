@@ -13,6 +13,10 @@ Usage:
         --results-dir rq1_results \\
         --output analysis/ablation/rq1_results.csv \\
         --jobs 8
+
+    # Batch 2: rows 50-99
+    python scripts/experiments/run_rq1_matrix_sweep.py \\
+        --offset 50 --limit 50 ...
 """
 
 from __future__ import annotations
@@ -56,6 +60,26 @@ def _aggregate_cells(cells: List[dict]) -> dict:
         "avg_pairwise": statistics.mean(pairwise),
         "stddev_pairwise": statistics.pstdev(pairwise) if n > 1 else 0.0,
     }
+
+
+def _expected_n_cells(row: dict, data_root: Path) -> int:
+    """Number of per-fold / outer-inner cells one matrix row should produce."""
+    test_manifest = json.loads(
+        (data_root / row["TestDataset"] / "manifest.json").read_text()
+    )
+    n_outer = test_manifest["num_folds"]
+    if row["FitSource"] == "id":
+        return n_outer
+    fit_dataset = FIT_SOURCE_TO_RUNNER[row["FitSource"]]
+    inner_manifest = json.loads(
+        (data_root / fit_dataset / "manifest.json").read_text()
+    )
+    return inner_manifest["num_folds"] * n_outer
+
+
+def _row_is_complete(row: dict, groups: Dict[Tuple, List[dict]], data_root: Path) -> bool:
+    cells = groups.get(row_match_key(row), [])
+    return len(cells) >= _expected_n_cells(row, data_root)
 
 
 def _load_result_cells(results_dir: Path) -> Dict[Tuple, List[dict]]:
@@ -137,21 +161,17 @@ def _run_one_row(
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = f"{REPO_ROOT}{os.pathsep}{env.get('PYTHONPATH', '')}"
+        env["PYTHONUNBUFFERED"] = "1"
         proc = subprocess.run(
             cmd,
             cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
             env=env,
         )
     except Exception as exc:
         return row, "failed", str(exc)
 
     if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "unknown error").strip()
-        if len(detail) > 500:
-            detail = detail[:500] + "..."
-        return row, "failed", detail
+        return row, "failed", f"exit code {proc.returncode}"
     return row, "completed", ""
 
 
@@ -208,31 +228,55 @@ def main() -> None:
         help="Skip runs; aggregate existing results into the output CSV.",
     )
     parser.add_argument(
+        "--skip-completed",
+        action="store_true",
+        help="Skip matrix rows that already have full result cells on disk.",
+    )
+    parser.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help="Skip the first N matrix rows before applying --limit (batching).",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="Run only the first N matrix rows (for smoke tests).",
+        help="Run at most N matrix rows after --offset (batch size).",
     )
     args = parser.parse_args()
 
-    rows = list(iter_rq1_rows())
-    if args.limit is not None:
-        rows = rows[: args.limit]
+    all_rows = list(iter_rq1_rows())
+    end = args.offset + args.limit if args.limit is not None else None
+    rows = all_rows[args.offset:end]
 
     results_dir = Path(args.results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
+    data_root = Path(args.data_root)
+    existing_groups = _load_result_cells(results_dir) if args.skip_completed else {}
 
     to_run = [
         row for row in rows
         if not (args.skip_prefilled and row["Status"] == "pre-filled")
+        and not (
+            args.skip_completed
+            and _row_is_complete(row, existing_groups, data_root)
+        )
     ]
 
     if not args.aggregate_only:
-        print(f"[rq1] running {len(to_run)} configs with jobs={args.jobs}")
+        skipped = len(rows) - len(to_run)
+        print(
+            f"[rq1] batch offset={args.offset} "
+            f"size={len(rows)} to_run={len(to_run)} skipped={skipped} "
+            f"total_matrix={len(all_rows)} jobs={args.jobs}",
+            flush=True,
+        )
         if args.jobs <= 1:
             for i, row in enumerate(to_run, 1):
                 print(f"[rq1] [{i}/{len(to_run)}] {row['ConfigID']} "
-                      f"{row['FitSource']} {row['TestDataset']} {row['Model']}")
+                      f"{row['FitSource']} {row['TestDataset']} {row['Model']}",
+                      flush=True)
                 _, status, note = _run_one_row(
                     row,
                     args.hidden_states_root,
@@ -267,10 +311,11 @@ def main() -> None:
                         row["Notes"] = note
                     print(f"[rq1] [{completed}/{len(to_run)}] "
                           f"{row['ConfigID']} {row['FitSource']} "
-                          f"{row['TestDataset']} {row['Model']} -> {status}")
+                          f"{row['TestDataset']} {row['Model']} -> {status}",
+                          flush=True)
 
     groups = _load_result_cells(results_dir)
-    filled_rows = [_fill_metrics(row, groups) for row in rows]
+    filled_rows = [_fill_metrics(row, groups) for row in all_rows]
     write_csv(filled_rows, Path(args.output))
 
     n_completed = sum(r["Status"] == "completed" for r in filled_rows)

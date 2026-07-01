@@ -21,6 +21,7 @@ Outputs
 - ``pairdiff_task_max_cosine.csv`` with columns including ``correct_score``,
   ``max_incorrect_score``, ``task_max_score``, ``correct_highest_in_task``,
   and ``cosine_similarity``
+- Density overlay PNG (1-of-N task-win markers), same style as ``plot_pairdiff_score_diff.py``
 
 Related scripts
 ---------------
@@ -60,6 +61,7 @@ from plot_pairdiff_score_diff import (
     correct_highest_in_task,
     load_detailed_json,
     parse_args,
+    plot_layers_overlay_with_score_markers,
     resolve_analysis_layers,
     score_at_layer,
     task_score_summary,
@@ -243,6 +245,23 @@ def process_fold(args: Args) -> Path:
     csv_path = out_dir / "pairdiff_task_max_cosine.csv"
     write_csv(entries, csv_path)
     logger.info("[fold %s] wrote CSV to %s", args.fold, csv_path)
+
+    plot_layer_set = set(plot_layers)
+    plot_entries = [entry for entry in entries if int(entry["layer"]) in plot_layer_set]
+    plot_layers_overlay_with_score_markers(
+        args,
+        plot_entries,
+        metrics,
+        plot_layers,
+        out_dir,
+        experiment_selected,
+        win_field="correct_highest_in_task",
+        task_max=True,
+        overlay_suffix="task_max",
+        positive_label="correct highest in task",
+        negative_label="incorrect beats correct",
+        marker_note="1-of-N task win",
+    )
     return csv_path
 
 

@@ -16,7 +16,7 @@
 #
 # Prerequisites
 #   Hidden-state bundles, directions, detailed.json, results.json per fold.
-#   For icse26_val_1_4: run val_one_of_4_from_cache.sh first.
+#   For icse26_val_1_4: run fit_vectors_from_cache (via run_val_one_of_4_from_cache.sh) first.
 #
 # Usage
 #   source ../envs/llm-code-correctness/bin/activate
@@ -50,13 +50,13 @@ ROOT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$ROOT_DIR"
 export PYTHONPATH="$ROOT_DIR/scripts/analysis:$ROOT_DIR"
 
-DATASET_SOURCE="${DATASET_SOURCE:-icse26}"
-VECTORS_DATASET_SOURCE="${VECTORS_DATASET_SOURCE:-icse26}"
-HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-${ROOT_DIR}/../hidden_states_sohaila}"
+DATASET_SOURCE="${DATASET_SOURCE:-icse26_val_1_4}"
+VECTORS_DATASET_SOURCE="${VECTORS_DATASET_SOURCE:-icse26_val_1_4}"
+HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-${ROOT_DIR}/../hidden_states_re2230}"
 VECTORS_ROOT="${VECTORS_ROOT:-${ROOT_DIR}/vectors}"
-RESULTS_ROOT="${RESULTS_ROOT:-${ROOT_DIR}/results}"
+RESULTS_ROOT="${RESULTS_ROOT:-${ROOT_DIR}/results_icse26_val_1_4}"
 SPLIT="${SPLIT:-validate}"
-PYTHON="${PYTHON:-python3}"
+PYTHON="${PYTHON:-/scratch/re2230/envs/llm-code-correctness/bin/python}"
 export PYTHONUNBUFFERED=1
 FOLDS=(0 1 2 3 4 5 6 7 8 9)
 if [[ -n "${FOLDS_OVERRIDE:-}" ]]; then

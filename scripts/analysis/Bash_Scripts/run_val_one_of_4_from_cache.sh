@@ -1,15 +1,16 @@
 #!/bin/bash
 # Thin wrapper around the SLURM launcher (local mode).
 #
-# Score validation and test 1-of-4 from cached hidden states for
-# icse26_val_1_4. Writes results under results_icse26_val_1_4/ by default.
+# Fit vectors from cached fit bundles, then score validate/test for
+# icse26_val_1_4. Writes vectors/ and results_icse26_val_1_4/ by default.
 #
 # Usage:
 #   bash scripts/analysis/Bash_Scripts/run_val_one_of_4_from_cache.sh
 #
 # Environment variables (optional overrides):
-#   MODEL / BENCHMARK / SPLIT_FAMILY / VECTORS_SPLIT_FAMILY / DISTRIBUTION
+#   MODEL / BENCHMARK / SPLIT_FAMILY / DISTRIBUTION
 #   HIDDEN_STATES_ROOT / VECTORS_ROOT / RESULTS_ROOT / FOLDS
+#   LAYER_SELECTION_METRIC   one_of_4 (default) or pairwise_acc
 #   MODELS                  space-separated list for multi-model local runs
 #
 # For SLURM submission, use the launcher directly:

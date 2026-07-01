@@ -49,6 +49,7 @@ import argparse
 import csv
 import json
 import logging
+import sys
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -128,7 +129,7 @@ def parse_args() -> Args:
         default=None,
         help=(
             "Split family for direction vectors in vectors/ "
-            "(default: same as --dataset-source). For icse26_val_1_4, use icse26."
+            "(default: same as --dataset-source)."
         ),
     )
     parser.add_argument("--benchmark", required=True)
@@ -225,15 +226,15 @@ def layer_selection_label(args: Args, layers: List[int]) -> str:
     return f"Layers {', '.join(str(layer) for layer in layers)}"
 
 
-def overlay_plot_filename(args: Args, layers: List[int]) -> str:
+def overlay_plot_filename(args: Args, layers: List[int], *, suffix: str = "score_diff") -> str:
     if args.layers == "top-percentile":
-        return f"top_{int(args.percentile)}th_percentile_layers_cosine_score_diff_fold_{args.fold}.png"
+        return f"top_{int(args.percentile)}th_percentile_layers_cosine_{suffix}_fold_{args.fold}.png"
     if args.layers == "selected":
-        return f"selected_layer_{layers[0]}_cosine_score_diff_fold_{args.fold}.png"
+        return f"selected_layer_{layers[0]}_cosine_{suffix}_fold_{args.fold}.png"
     if args.layers == "all":
-        return f"all_layers_cosine_score_diff_fold_{args.fold}.png"
+        return f"all_layers_cosine_{suffix}_fold_{args.fold}.png"
     layer_tag = "_".join(str(layer) for layer in layers)
-    return f"layers_{layer_tag}_cosine_score_diff_fold_{args.fold}.png"
+    return f"layers_{layer_tag}_cosine_{suffix}_fold_{args.fold}.png"
 
 
 def detailed_json_path(args: Args) -> Path:
@@ -475,6 +476,17 @@ def _smooth_density(values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return bin_centers, smooth
 
 
+def _entry_is_positive(
+    entry: Dict[str, object],
+    *,
+    win_field: str,
+    task_max: bool,
+) -> bool:
+    if task_max:
+        return int(float(entry[win_field])) == 1
+    return float(entry[win_field]) >= 0.0
+
+
 def plot_layers_overlay_with_score_markers(
     args: Args,
     entries: List[Dict[str, object]],
@@ -482,6 +494,13 @@ def plot_layers_overlay_with_score_markers(
     layers: List[int],
     out_dir: Path,
     experiment_selected_layer: int,
+    *,
+    win_field: str = "score_diff",
+    task_max: bool = False,
+    overlay_suffix: str = "score_diff",
+    positive_label: str = "score_diff >= 0",
+    negative_label: str = "score_diff < 0",
+    marker_note: str = "score_diff sign",
 ) -> None:
     import matplotlib.pyplot as plt
 
@@ -489,7 +508,7 @@ def plot_layers_overlay_with_score_markers(
     test_metrics = metrics.get("test")
     selected_layers = sorted({int(entry["layer"]) for entry in entries})
     if not selected_layers:
-        logger.warning("No layers selected for score-diff plot for fold %s", args.fold)
+        logger.warning("No layers selected for cosine overlay plot for fold %s", args.fold)
         return
 
     grouped_cosine: Dict[int, List[float]] = defaultdict(list)
@@ -499,7 +518,7 @@ def plot_layers_overlay_with_score_markers(
         layer = int(entry["layer"])
         cosine = float(entry["cosine_similarity"])
         grouped_cosine[layer].append(cosine)
-        if float(entry["score_diff"]) >= 0.0:
+        if _entry_is_positive(entry, win_field=win_field, task_max=task_max):
             grouped_positive[layer].append(cosine)
         else:
             grouped_negative[layer].append(cosine)
@@ -554,8 +573,8 @@ def plot_layers_overlay_with_score_markers(
                 linewidths=0.6,
             )
 
-    ax.scatter([], [], marker="o", color="black", s=30, label="score_diff >= 0")
-    ax.scatter([], [], marker="x", color="black", s=30, label="score_diff < 0")
+    ax.scatter([], [], marker="o", color="black", s=30, label=positive_label)
+    ax.scatter([], [], marker="x", color="black", s=30, label=negative_label)
 
     ax.set_xlim(-1.0, 1.0)
     ax.set_xlabel("Cosine similarity")
@@ -563,11 +582,11 @@ def plot_layers_overlay_with_score_markers(
     ax.axvline(0.0, color="black", linestyle="--", linewidth=1)
     ax.set_title(
         f"{layer_selection_label(args, layers)} cosine similarity overlay for fold {args.fold} "
-        f"(x/o = score_diff sign)"
+        f"(x/o = {marker_note})"
     )
     ax.legend(loc="best", fontsize=8)
     fig.tight_layout()
-    fig_path = out_dir / overlay_plot_filename(args, layers)
+    fig_path = out_dir / overlay_plot_filename(args, layers, suffix=overlay_suffix)
     fig.savefig(fig_path, dpi=200)
     plt.close(fig)
     logger.info("Wrote score-diff cosine overlay plot to %s", fig_path)

@@ -85,6 +85,9 @@ CSV_COLUMNS = [
 
     "results_selected_one_of_4",
     "cosine_selected_one_of_4",
+
+    "results_selected_test_one_of_4",
+    "cosine_selected_test_one_of_4",
 ]
 
 
@@ -108,8 +111,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Split family for direction vectors in vectors/ "
-            "(default: same as --dataset-source). "
-            "For icse26_val_1_4, use icse26 because fit directions were trained on the original split."
+            "(default: same as --dataset-source)."
         ),
     )
     parser.add_argument("--benchmark", required=True)
@@ -541,6 +543,12 @@ def build_rows_for_fold(
             ),
             "cosine_selected_one_of_4": metric_value(
                 metrics, split, cosine_selected_layer, "one_of_4"
+            ),
+            "results_selected_test_one_of_4": metric_value(
+                metrics, "test", results_selected_layer, "one_of_4"
+            ),
+            "cosine_selected_test_one_of_4": metric_value(
+                metrics, "test", cosine_selected_layer, "one_of_4"
             ),
         }
         rows.append(row)

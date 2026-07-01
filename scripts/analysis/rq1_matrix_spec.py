@@ -150,6 +150,23 @@ def is_prefilled(method: str, representation: str, framing_key: str) -> bool:
     )
 
 
+def matrix_row_count() -> int:
+    """Total number of rows in the RQ1 matrix."""
+    return (
+        len(METHODS) * len(REPRESENTATIONS) * len(FRAMING_MODES)
+        * len(FIT_SOURCES) * len(TEST_DATASETS) * len(MODELS)
+    )
+
+
+def batch_offset_limit(batch_index: int, batch_size: int) -> tuple:
+    """Return (offset, limit) for a zero-based batch index."""
+    if batch_index < 0:
+        raise ValueError(f"batch_index must be >= 0, got {batch_index}")
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be > 0, got {batch_size}")
+    return batch_index * batch_size, batch_size
+
+
 def iter_rq1_rows() -> Iterator[dict]:
     """Yield matrix rows in the exact order used by generate_rq1_matrix.py."""
     configs: List[dict] = []

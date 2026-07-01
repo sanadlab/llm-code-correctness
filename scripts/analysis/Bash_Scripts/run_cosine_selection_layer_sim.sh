@@ -17,7 +17,7 @@ echo "PYTHONPATH=${PYTHONPATH}"
 MODEL="codellama/CodeLlama-7b-Instruct-hf"
 BENCHMARK="bigcodebench"
 DATASET_SOURCE="icse26_val_1_4"
-VECTORS_DATASET_SOURCE="${VECTORS_DATASET_SOURCE:-icse26}"
+VECTORS_DATASET_SOURCE="${VECTORS_DATASET_SOURCE:-icse26_val_1_4}"
 DISTRIBUTION="id"
 
 HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-${ROOT_DIR}/../hidden_states_re2230}"
@@ -26,7 +26,7 @@ RESULTS_ROOT="${RESULTS_ROOT:-${ROOT_DIR}/results_icse26_val_1_4}"
 COSINE_SELECTION_SPLIT="${COSINE_SELECTION_SPLIT:-validate}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/phase2_task2_cosine_selected_layer_table}"
 MAX_TASKS="${MAX_TASKS:-}"
-PYTHON="${PYTHON:-python3}"
+PYTHON="${PYTHON:-/scratch/re2230/envs/llm-code-correctness/bin/python}"
 FOLDS="${FOLDS:-0 1 2 3 4 5 6 7 8 9}"
 
 export PYTHONUNBUFFERED=1

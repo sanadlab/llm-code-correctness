@@ -2,7 +2,8 @@
 # =============================================================================
 # run_pairdiff_task_max_scatter.sh
 # =============================================================================
-# Full pipeline: task-level (1-of-N) score ranking CSVs + cross-fold scatter grids.
+# Full pipeline: task-level (1-of-N) score ranking CSVs, density overlays,
+# and cross-fold scatter grids.
 #
 # What it runs
 #   1. plot_pairdiff_task_max_score_diff.py per fold → pairdiff_task_max_cosine.csv
@@ -13,12 +14,12 @@
 #   x = any incorrect beats the correct sample
 #
 # Outputs
-#   outputs/phase2_task2_task_max/top_percentile/     CSVs per fold
+#   outputs/phase2_task2_task_max/top_percentile/     CSVs + density overlays per fold
 #   outputs/phase2_task2_task_max/scatter_cross_fold/ scatter PNGs per layer
 #
 # Prerequisites
 #   Hidden-state bundles, directions, detailed.json, results.json per fold.
-#   For icse26_val_1_4: run val_one_of_4_from_cache.sh first.
+#   For icse26_val_1_4: run fit_vectors_from_cache (via run_val_one_of_4_from_cache.sh) first.
 #
 # Usage
 #   source ../envs/llm-code-correctness/bin/activate
@@ -53,11 +54,11 @@ cd "$ROOT_DIR"
 export PYTHONPATH="$ROOT_DIR/scripts/analysis:$ROOT_DIR"
 
 DATASET_SOURCE="${DATASET_SOURCE:-icse26_val_1_4}"
-VECTORS_DATASET_SOURCE="${VECTORS_DATASET_SOURCE:-icse26}"
+VECTORS_DATASET_SOURCE="${VECTORS_DATASET_SOURCE:-icse26_val_1_4}"
 HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-${ROOT_DIR}/../hidden_states_re2230}"
 VECTORS_ROOT="${VECTORS_ROOT:-${ROOT_DIR}/vectors}"
 RESULTS_ROOT="${RESULTS_ROOT:-${ROOT_DIR}/results_icse26_val_1_4}"
-PYTHON="${PYTHON:-python3}"
+PYTHON="${PYTHON:-/scratch/re2230/envs/llm-code-correctness/bin/python}"
 MODELS=(
   "codellama/CodeLlama-7b-Instruct-hf"
 #  "Qwen/Qwen2.5-Coder-7B-Instruct"

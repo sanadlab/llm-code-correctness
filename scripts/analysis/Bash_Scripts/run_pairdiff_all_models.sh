@@ -15,8 +15,8 @@
 #
 # Prerequisites
 #   Hidden-state bundles, direction vectors, and results.json for each fold.
-#   For icse26_val_1_4: run val_one_of_4_from_cache.py first to populate
-#   results_icse26_val_1_4/.
+#   For icse26_val_1_4: run fit_vectors_from_cache.py first to populate
+#   vectors/ and results_icse26_val_1_4/.
 #
 # Usage
 #   source ../envs/llm-code-correctness/bin/activate
@@ -33,7 +33,7 @@
 #
 # Environment variables
 #   DATASET_SOURCE          split family for bundles + results (default: icse26_val_1_4)
-#   VECTORS_DATASET_SOURCE  split family for direction vectors (default: icse26)
+#   VECTORS_DATASET_SOURCE  split family for direction vectors (default: same as DATASET_SOURCE)
 #   HIDDEN_STATES_ROOT      path to hidden states (default: ../hidden_states_re2230)
 #   VECTORS_ROOT            path to vectors (default: vectors)
 #   RESULTS_ROOT            path to results (default: results_icse26_val_1_4)
@@ -49,11 +49,11 @@ cd "$ROOT_DIR"
 export PYTHONPATH="$ROOT_DIR"
 
 DATASET_SOURCE="${DATASET_SOURCE:-icse26_val_1_4}"
-VECTORS_DATASET_SOURCE="${VECTORS_DATASET_SOURCE:-icse26}"
+VECTORS_DATASET_SOURCE="${VECTORS_DATASET_SOURCE:-${DATASET_SOURCE}}"
 HIDDEN_STATES_ROOT="${HIDDEN_STATES_ROOT:-${ROOT_DIR}/../hidden_states_re2230}"
 VECTORS_ROOT="${VECTORS_ROOT:-${ROOT_DIR}/vectors}"
 RESULTS_ROOT="${RESULTS_ROOT:-${ROOT_DIR}/results_icse26_val_1_4}"
-SPLIT="${SPLIT:-validate}"
+SPLIT="${SPLIT:-test}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/phase2_task2_cosine/selected}"
 PYTHON="${PYTHON:-python3}"
 FOLDS=(0 1 2 3 4 5 6 7 8 9)
