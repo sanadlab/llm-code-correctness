@@ -75,6 +75,8 @@ logs/
 !/results/split_analysis/
 /results/split_analysis/pair_metrics.csv
 /visualizations/
+/rq1_results/
+/results_icse26_val_1_4/
 
 # Code-reorg experiment raw outputs (tracked as compressed archives instead)
 code-reorg-results/
