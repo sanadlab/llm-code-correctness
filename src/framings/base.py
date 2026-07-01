@@ -29,11 +29,12 @@ class Prompt:
 
         - ``True``  : prompt ends at the start of ``assistant_text``;
                       ``assistant_text`` forms the response portion.
-                      Used by Neutral and Function framings.
+                      Used by Neutral, Function, and Concept framings.
 
         - ``False`` : the whole templated text is the prompt;
-                      the response portion is empty.
-                      Used by Concept framing.
+                      the response portion is empty unless
+                      ``assistant_text`` is non-empty and excluded from
+                      ``prompt_prefix`` by other means.
 
         Representations like ``response_avg`` are zero when the
         response portion is empty.
