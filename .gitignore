@@ -52,7 +52,9 @@ logs/
 /vectors.tar.zst
 /results.tar.zst
 /vectors/
-/hidden_states/
+/hidden_states/*
+!/hidden_states/README.md
+!/hidden_states/STRUCTURE.md
 
 # Raw results and some relevant exceptions
 /results/
