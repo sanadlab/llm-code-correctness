@@ -18,7 +18,7 @@ import random
 from collections import Counter
 from pathlib import Path
 
-from scripts.sample_frozen import (
+from scripts.utils.sample_frozen import (
     _task_sort_key,
     allocate_counts,
     reference_operator_counts,
