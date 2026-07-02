@@ -50,6 +50,16 @@ def _body_nodes_preorder(func_body: list[ast.stmt]) -> list[ast.AST]:
     return nodes
 
 
+def _constant_in_assignment_rhs(node: ast.Constant, func_body: list[ast.stmt]) -> bool:
+    """True when a literal appears in the RHS of a plain assignment (defining initializer)."""
+    for stmt in func_body:
+        if isinstance(stmt, ast.Assign):
+            for child in ast.walk(stmt.value):
+                if child is node:
+                    return True
+    return False
+
+
 def _get_function_body(tree: ast.Module, entry_point: str) -> tuple[ast.FunctionDef, list[ast.stmt]]:
     """Find the FunctionDef and return (func_node, mutable_body).
     The mutable body skips a leading docstring Expr if present."""
@@ -1091,6 +1101,8 @@ class CVR(MutationOperator):
         site_idx = 0
         for node in _body_nodes_preorder(body):
             if isinstance(node, ast.Constant):
+                if _constant_in_assignment_rhs(node, body):
+                    continue
                 const_type = coord_to_type.get(_ast_coord(node))
                 if const_type is None:
                     continue

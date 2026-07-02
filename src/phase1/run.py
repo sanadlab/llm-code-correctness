@@ -122,7 +122,16 @@ def main():
                        help="Step to run (or 'all')")
     parser.add_argument("--force", action="store_true",
                        help="Force re-run even if output exists")
+    parser.add_argument(
+        "--reason",
+        action="store_true",
+        help="When running validate_mutants (or all), print details about failing mutants",
+    )
     args = parser.parse_args()
+
+    if args.reason:
+        # Read by src.phase1.validate_mutants to emit extra debugging output.
+        os.environ["VALIDATE_SHOW_REASON"] = "1"
 
     cfg = load_config(args.config)
 

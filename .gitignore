@@ -1,11 +1,28 @@
 # Raw brainstorming / design notes
 init.txt
+Untitled
 
 # Generated data and outputs
 data/
 outputs/
-/dataset
+dataset/bigcodebench/frozen.jsonl
+dataset/bigcodebench/intermediate/*/
+# Ignore all top-level .jsonl files in intermediate, but not .jsonl.zst
+dataset/bigcodebench/intermediate/*.jsonl
+!dataset/bigcodebench/intermediate/*.jsonl.zst
+# Ignore run outputs and test datasets
+dataset/bigcodebench/runs/
+dataset/test/
 
+# Mutation_DS phase2 splits live inside dataset/bigcodebench/phase2.tar.zst.
+# Hide the decompressed working tree; keep the bundle itself tracked.
+dataset/bigcodebench/phase2/
+!dataset/bigcodebench/phase2.tar.zst
+
+# ICSE26 dataset lives inside dataset/icse26.tar.zst.
+# Hide the decompressed working tree; keep the bundle itself tracked.
+dataset/icse26/
+!dataset/icse26.tar.zst
 
 # Third-party submodule content is fetched via `make setup`
 # (git submodules handle this, but just in case)
@@ -19,6 +36,8 @@ dist/
 build/
 *.egg
 .eggs/
+.coverage
+.ipynb_checkpoints/
 
 # Virtual environments
 .venv/
@@ -28,6 +47,7 @@ env/
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 
