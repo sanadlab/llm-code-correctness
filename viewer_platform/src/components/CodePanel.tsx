@@ -2,6 +2,7 @@
 
 import CodeMirror from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
+import { oneDark } from "@codemirror/theme-one-dark";
 
 type CodePanelProps = {
   code: string;
@@ -33,6 +34,7 @@ export function CodePanel({
         value={code}
         height={minHeight}
         extensions={[python()]}
+        theme={oneDark}
         editable={false}
         basicSetup={{
           lineNumbers: true,

@@ -1,0 +1,49 @@
+# Mirrors viewer_platform/ into a standalone GitHub repo for Vercel deployment.
+#
+# Required repo secrets (Settings → Secrets → Actions):
+#   VIEWER_DEPLOY_TOKEN  — PAT with contents:write on the deploy repo
+#
+# Required repo variable (Settings → Variables → Actions):
+#   VIEWER_DEPLOY_REPO   — e.g. sanadlab/llm-code-correctness-viewer
+#
+# Create the deploy repo empty on GitHub first, then connect it to Vercel.
+
+name: Sync viewer to deploy repo
+
+on:
+  push:
+    branches:
+      - main
+      - feat/code-review-viewer
+    paths:
+      - "viewer_platform/**"
+      - ".github/workflows/sync-viewer-deploy.yml"
+
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: vars.VIEWER_DEPLOY_REPO != ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Split viewer_platform and push to deploy repo
+        env:
+          DEPLOY_REPO: ${{ vars.VIEWER_DEPLOY_REPO }}
+          DEPLOY_TOKEN: ${{ secrets.VIEWER_DEPLOY_TOKEN }}
+          DEPLOY_BRANCH: main
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git subtree split --prefix=viewer_platform -b viewer-deploy-split
+
+          git push \
+            "https://x-access-token:${DEPLOY_TOKEN}@github.com/${DEPLOY_REPO}.git" \
+            viewer-deploy-split:${DEPLOY_BRANCH} --force
+
+          git branch -D viewer-deploy-split

@@ -26,6 +26,7 @@ type DataSourcePanelProps = {
   onUploadLoad: (params: {
     categoryId: UploadCategoryId;
     primaryText: string;
+    fullPrimaryText: string;
     tasksText?: string;
     mutantsText?: string;
     fileName: string;
@@ -38,6 +39,48 @@ type DataSourcePanelProps = {
 };
 
 type SourceTab = "repo" | "upload";
+type ConfoundCompareMode = "canonical" | "mutant" | "both";
+
+async function extractMutantsForIds(
+  file: File,
+  mutantIds: Set<string>,
+): Promise<string> {
+  if (mutantIds.size === 0) return "";
+  const reader = file.stream().getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const kept: string[] = [];
+  const found = new Set<string>();
+
+  try {
+    while (found.size < mutantIds.size) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split(/\r?\n/);
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        if (!part.trim()) continue;
+        try {
+          const row = JSON.parse(part) as Record<string, unknown>;
+          const id =
+            row.mutant_id ?? row.implementation_id ?? row.id ?? row.source_mutant_id;
+          if (typeof id === "string" && mutantIds.has(id)) {
+            kept.push(part);
+            found.add(id);
+            if (found.size >= mutantIds.size) break;
+          }
+        } catch {
+          // Skip malformed lines in joins.
+        }
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => undefined);
+  }
+
+  return kept.length > 0 ? `${kept.join("\n")}\n` : "";
+}
 
 export function DataSourcePanel({
   onLoaded,
@@ -66,8 +109,12 @@ export function DataSourcePanel({
   const [primaryFile, setPrimaryFile] = useState<File | null>(null);
   const [tasksFile, setTasksFile] = useState<File | null>(null);
   const [mutantsFile, setMutantsFile] = useState<File | null>(null);
+  const [confoundCompareMode, setConfoundCompareMode] =
+    useState<ConfoundCompareMode>("both");
 
   const category = uploadCategoryById(uploadCategory);
+  const isConfoundUploadCategory =
+    uploadCategory === "validated_confounded" || uploadCategory === "confound_candidates";
 
   useEffect(() => {
     fetchDatasetBrowse().then((data) => {
@@ -160,11 +207,35 @@ export function DataSourcePanel({
       const { parseJsonlFile } = await import("@/lib/jsonl-stream");
       const cap = limit || category.defaultLimit || maxUploadRecords;
       const { text, truncated } = await parseJsonlFile(primaryFile, cap);
-      const tasksText = tasksFile ? await tasksFile.text() : undefined;
-      const mutantsText = mutantsFile ? await mutantsFile.text() : undefined;
+      const fullPrimaryText = await primaryFile.text();
+      const wantTasks = !isConfoundUploadCategory || confoundCompareMode !== "mutant";
+      const wantMutants =
+        !isConfoundUploadCategory || confoundCompareMode !== "canonical";
+      const tasksText = wantTasks && tasksFile ? await tasksFile.text() : undefined;
+      let mutantsText: string | undefined;
+      if (wantMutants && mutantsFile) {
+        if (isConfoundUploadCategory) {
+          const ids = new Set<string>();
+          for (const line of text.split(/\r?\n/)) {
+            if (!line.trim()) continue;
+            try {
+              const row = JSON.parse(line) as Record<string, unknown>;
+              if (typeof row.source_mutant_id === "string") {
+                ids.add(row.source_mutant_id);
+              }
+            } catch {
+              // Skip malformed primary rows.
+            }
+          }
+          mutantsText = await extractMutantsForIds(mutantsFile, ids);
+        } else {
+          mutantsText = await mutantsFile.text();
+        }
+      }
       onUploadLoad({
         categoryId: uploadCategory,
         primaryText: text,
+        fullPrimaryText,
         tasksText,
         mutantsText,
         fileName: primaryFile.name,
@@ -213,6 +284,9 @@ export function DataSourcePanel({
                 onChange={(e) => {
                   setUploadCategory(e.target.value as UploadCategoryId);
                   setPrimaryFile(null);
+                  setTasksFile(null);
+                  setMutantsFile(null);
+                  setConfoundCompareMode("both");
                 }}
                 className="select-field w-full"
               >
@@ -229,6 +303,28 @@ export function DataSourcePanel({
               )}
             </label>
 
+            {isConfoundUploadCategory && (
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-[var(--text-muted)]">
+                  Compare against
+                </span>
+                <select
+                  value={confoundCompareMode}
+                  onChange={(e) =>
+                    setConfoundCompareMode(e.target.value as ConfoundCompareMode)
+                  }
+                  className="select-field w-full"
+                >
+                  <option value="canonical">Canonical only</option>
+                  <option value="mutant">Mutant only</option>
+                  <option value="both">Canonical + Mutant</option>
+                </select>
+                <p className="mt-1.5 text-xs text-[var(--text-muted)]">
+                  This controls which join files you need for confound JSONL.
+                </p>
+              </label>
+            )}
+
             <FilePick
               label="Primary JSONL"
               required
@@ -236,7 +332,8 @@ export function DataSourcePanel({
               onFile={(f) => setPrimaryFile(f)}
             />
 
-            {category?.needsTasksJoin && (
+            {category?.needsTasksJoin &&
+              (!isConfoundUploadCategory || confoundCompareMode !== "mutant") && (
               <FilePick
                 label="Join · tasks.jsonl (canonical + prompt)"
                 file={tasksFile}
@@ -244,7 +341,8 @@ export function DataSourcePanel({
               />
             )}
 
-            {category?.needsMutantsJoin && (
+            {category?.needsMutantsJoin &&
+              (!isConfoundUploadCategory || confoundCompareMode !== "canonical") && (
               <FilePick
                 label="Join · validated_mutants.jsonl (source mutant code)"
                 file={mutantsFile}
