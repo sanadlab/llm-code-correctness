@@ -10,8 +10,8 @@ from src.phase1.mutate import _mutate_task
 from src.phase1.operators import get_operators
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_VALIDATED_TASKS = _REPO_ROOT / "dataset/3_isolated_run/intermediate/validated_tasks.jsonl"
-_RUN2_MUTANTS = _REPO_ROOT / "dataset/2_isolated_run/intermediate/mutants.jsonl"
+_VALIDATED_TASKS = _REPO_ROOT / "dataset/archive/3_isolated_run/intermediate/validated_tasks.jsonl"
+_RUN2_MUTANTS = _REPO_ROOT / "dataset/archive/2_isolated_run/intermediate/mutants.jsonl"
 _ALL_OPERATORS = [
     "AOR", "AOI", "AOD", "ROR", "COR", "COD", "UOI", "UOD", "CR", "VVR",
     "VCR", "CVR", "SD", "RVM", "TR", "FR", "RC", "NEG", "FCD", "CRN",
@@ -20,6 +20,8 @@ _ALL_OPERATORS = [
 
 
 def _load_task(task_id: str) -> dict:
+    if not _VALIDATED_TASKS.exists():
+        pytest.skip(f"Dataset file {_VALIDATED_TASKS} not available in this environment.")
     for line in _VALIDATED_TASKS.read_text().splitlines():
         task = json.loads(line)
         if task["task_id"] == task_id:
@@ -95,7 +97,7 @@ def test_previously_lost_tasks_all_produce_mutants(run2_counts_by_task):
     if not _VALIDATED_TASKS.exists() or not _RUN2_MUTANTS.exists():
         pytest.skip("dataset files not available")
 
-    run3_path = _REPO_ROOT / "dataset/3_isolated_run/intermediate/mutants.jsonl"
+    run3_path = _REPO_ROOT / "dataset/archive/3_isolated_run/intermediate/mutants.jsonl"
     if not run3_path.exists():
         pytest.skip("run 3 mutants not available")
 
@@ -120,7 +122,7 @@ def test_previously_lost_tasks_match_run2_counts(run2_counts_by_task):
     if not _VALIDATED_TASKS.exists() or not _RUN2_MUTANTS.exists():
         pytest.skip("dataset files not available")
 
-    run3_path = _REPO_ROOT / "dataset/3_isolated_run/intermediate/mutants.jsonl"
+    run3_path = _REPO_ROOT / "dataset/archive/3_isolated_run/intermediate/mutants.jsonl"
     if not run3_path.exists():
         pytest.skip("run 3 mutants not available")
 
