@@ -1,0 +1,1628 @@
+{
+    "methodology": {
+        "description": "Custom random 10-fold cross-validation split.",
+        "seed": 42,
+        "partitioning": "10% fit, 10% val, 80% test per fold",
+        "mutually_exclusive": true,
+        "base_tasks_bigcodebench": 1135,
+        "base_tasks_humaneval": 151
+    },
+    "splits": {
+        "S0-BCB": {
+            "fold_0": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_1": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_2": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_3": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_4": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_5": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_6": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_7": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_8": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_9": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            }
+        },
+        "S0-HE": {
+            "fold_0": {
+                "fit": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_1": {
+                "fit": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_2": {
+                "fit": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_3": {
+                "fit": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_4": {
+                "fit": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_5": {
+                "fit": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_6": {
+                "fit": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_7": {
+                "fit": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_8": {
+                "fit": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 16,
+                    "total_canonical": 16,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 120,
+                    "total_canonical": 120,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_9": {
+                "fit": {
+                    "num_tasks": 16,
+                    "total_canonical": 16,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 15,
+                    "total_canonical": 15,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 120,
+                    "total_canonical": 120,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            }
+        },
+        "S1-M": {
+            "fold_0": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22324,
+                    "total_confounds": 0
+                }
+            },
+            "fold_1": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22483,
+                    "total_confounds": 0
+                }
+            },
+            "fold_2": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22576,
+                    "total_confounds": 0
+                }
+            },
+            "fold_3": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22607,
+                    "total_confounds": 0
+                }
+            },
+            "fold_4": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22336,
+                    "total_confounds": 0
+                }
+            },
+            "fold_5": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22208,
+                    "total_confounds": 0
+                }
+            },
+            "fold_6": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22379,
+                    "total_confounds": 0
+                }
+            },
+            "fold_7": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22127,
+                    "total_confounds": 0
+                }
+            },
+            "fold_8": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22097,
+                    "total_confounds": 0
+                }
+            },
+            "fold_9": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22287,
+                    "total_confounds": 0
+                }
+            }
+        },
+        "S1-MC": {
+            "fold_0": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 1675
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 1653
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22324,
+                    "total_confounds": 13706
+                }
+            },
+            "fold_1": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 1653
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 1575
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22483,
+                    "total_confounds": 13806
+                }
+            },
+            "fold_2": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 1575
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 1638
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22576,
+                    "total_confounds": 13821
+                }
+            },
+            "fold_3": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 1638
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 1678
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22607,
+                    "total_confounds": 13718
+                }
+            },
+            "fold_4": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 1678
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 1824
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22336,
+                    "total_confounds": 13532
+                }
+            },
+            "fold_5": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 1824
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 1691
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22208,
+                    "total_confounds": 13519
+                }
+            },
+            "fold_6": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 1691
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 1682
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22379,
+                    "total_confounds": 13661
+                }
+            },
+            "fold_7": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 1682
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 1978
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22127,
+                    "total_confounds": 13374
+                }
+            },
+            "fold_8": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 1978
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 1640
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22097,
+                    "total_confounds": 13416
+                }
+            },
+            "fold_9": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 1640
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 1675
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 22287,
+                    "total_confounds": 13719
+                }
+            }
+        },
+        "S2-M-BCB": {
+            "fold_0": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_1": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_2": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_3": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_4": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_5": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_6": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_7": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_8": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_9": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            }
+        },
+        "S2-M-HE": {
+            "fold_0": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_1": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_2": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_3": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_4": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_5": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_6": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_7": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_8": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 120,
+                    "total_canonical": 120,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_9": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 0
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 0
+                },
+                "test": {
+                    "num_tasks": 120,
+                    "total_canonical": 120,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            }
+        },
+        "S2-MC-BCB": {
+            "fold_0": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 1675
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 1653
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_1": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 1653
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 1575
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_2": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 1575
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 1638
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_3": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 1638
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 1678
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_4": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 1678
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 1824
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_5": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 1824
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 1691
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_6": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 1691
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 1682
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_7": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 1682
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 1978
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_8": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 1978
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 1640
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_9": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 1640
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 1675
+                },
+                "test": {
+                    "num_tasks": 908,
+                    "total_canonical": 908,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            }
+        },
+        "S2-MC-HE": {
+            "fold_0": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 1675
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 1653
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_1": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2829,
+                    "total_confounds": 1653
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 1575
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_2": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2616,
+                    "total_confounds": 1575
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 1638
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_3": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2736,
+                    "total_confounds": 1638
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 1678
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_4": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2585,
+                    "total_confounds": 1678
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 1824
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_5": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 3007,
+                    "total_confounds": 1824
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 1691
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_6": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2713,
+                    "total_confounds": 1691
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 1682
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_7": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2836,
+                    "total_confounds": 1682
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 1978
+                },
+                "test": {
+                    "num_tasks": 121,
+                    "total_canonical": 121,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_8": {
+                "fit": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2965,
+                    "total_confounds": 1978
+                },
+                "val": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 1640
+                },
+                "test": {
+                    "num_tasks": 120,
+                    "total_canonical": 120,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            },
+            "fold_9": {
+                "fit": {
+                    "num_tasks": 114,
+                    "total_canonical": 114,
+                    "total_mutants": 2866,
+                    "total_confounds": 1640
+                },
+                "val": {
+                    "num_tasks": 113,
+                    "total_canonical": 113,
+                    "total_mutants": 2775,
+                    "total_confounds": 1675
+                },
+                "test": {
+                    "num_tasks": 120,
+                    "total_canonical": 120,
+                    "total_mutants": 0,
+                    "total_confounds": 0
+                }
+            }
+        }
+    }
+}

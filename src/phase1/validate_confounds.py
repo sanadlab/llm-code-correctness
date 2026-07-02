@@ -4,7 +4,10 @@ Re-validates every confounded variant through Docker. Keeps only variants whose
 failure_fingerprint matches the source mutant's fingerprint.
 """
 
+import io
 import os
+import re
+import tokenize
 from pathlib import Path
 
 from src.phase1.config import Phase1Config
@@ -21,6 +24,32 @@ from src.phase1.validate_mutants import (
 def _chunked(items: list, size: int):
     for i in range(0, len(items), size):
         yield items[i : i + size]
+
+
+def _normalize_body_for_compare(code: str) -> str:
+    """Token-level intermediate form: drop comments/whitespace, keep code tokens."""
+    parts: list[str] = []
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(code).readline):
+            if tok.type in {
+                tokenize.COMMENT,
+                tokenize.ENDMARKER,
+                tokenize.NEWLINE,
+                tokenize.NL,
+            }:
+                continue
+            parts.append(tok.string)
+        return re.sub(r"\s+", " ", "".join(parts)).strip()
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        stripped = re.sub(r"#.*", "", code)
+        return re.sub(r"\s+", " ", stripped.strip())
+
+
+def _confound_equivalent_to_mutant(confound_code: str, mutant_code: str) -> bool:
+    """True when confound code is cosmetically identical to the source mutant."""
+    return _normalize_body_for_compare(confound_code) == _normalize_body_for_compare(
+        mutant_code
+    )
 
 
 def _get_confound_shard_spec() -> tuple[int, int]:
@@ -54,6 +83,7 @@ def _process_batch_results(
     eval_results: dict,
     tasks: dict[str, dict],
     mutant_fp: dict[str, str | None],
+    mutant_code: dict[str, str],
 ) -> list[dict]:
     """Match eval results back to candidates and filter by same-failure fingerprint."""
     kept = []
@@ -68,10 +98,17 @@ def _process_batch_results(
             details = {}
             if isinstance(results, list) and order_pos < len(results):
                 r = results[order_pos]
-                status = r.get("status", "fail")
-                details = r.get("details", {})
+                status = r.get("status", r.get("plus_status", "fail"))
+                if "details" not in r and "plus_fail_tests" in r:
+                    details = {"plus_fail_tests": r.get("plus_fail_tests", []), "base_fail_tests": r.get("base_fail_tests", [])}
+                else:
+                    details = r.get("details", {})
 
             if status != "fail":
+                continue
+
+            source_code = mutant_code.get(c["source_mutant_id"], "")
+            if _confound_equivalent_to_mutant(c["code"], source_code):
                 continue
 
             fp = compute_failure_fingerprint(details)
@@ -96,6 +133,7 @@ def _validate_confound_batch(
     batch: list[dict],
     tasks: dict[str, dict],
     mutant_fp: dict[str, str | None],
+    mutant_code: dict[str, str],
     cfg: Phase1Config,
     work_dir: Path,
     batch_idx: int,
@@ -133,7 +171,7 @@ def _validate_confound_batch(
             for split_idx, split_batch in enumerate(split_batches, start=1):
                 child_idx = batch_idx * 1000 + split_idx
                 kept, timed_out = _validate_confound_batch(
-                    split_batch, tasks, mutant_fp, cfg, work_dir, child_idx,
+                    split_batch, tasks, mutant_fp, mutant_code, cfg, work_dir, child_idx,
                 )
                 all_kept.extend(kept)
                 all_timeout += timed_out
@@ -147,7 +185,7 @@ def _validate_confound_batch(
         )
         return [], batch_size
 
-    kept = _process_batch_results(batch, eval_results, tasks, mutant_fp)
+    kept = _process_batch_results(batch, eval_results, tasks, mutant_fp, mutant_code)
     return kept, 0
 
 
@@ -155,6 +193,10 @@ def validate_confounds(cfg: Phase1Config) -> None:
     candidates = read_jsonl(cfg.confound_candidates_path)
     shard_index, shard_count = _get_confound_shard_spec()
     output_path = _get_validated_confounds_output_path(cfg, shard_index, shard_count)
+
+    if os.environ.get("FORCE") == "1" and output_path.exists():
+        output_path.unlink()
+        print(f"FORCE=1: removed existing output {output_path}")
 
     if not candidates:
         print("No confound candidates to validate, writing empty output")
@@ -168,9 +210,10 @@ def validate_confounds(cfg: Phase1Config) -> None:
             f"assigned {len(candidates)} candidates"
         )
 
-    # Build lookup for source mutant fingerprints
+    # Build lookup for source mutant fingerprints and bodies
     validated_mutants = read_jsonl(cfg.validated_mutants_path)
     mutant_fp = {m["mutant_id"]: m["failure_fingerprint"] for m in validated_mutants}
+    mutant_code = {m["mutant_id"]: m["code"] for m in validated_mutants}
 
     tasks = {t["task_id"]: t for t in read_jsonl(cfg.validated_tasks_path)}
 
@@ -178,19 +221,43 @@ def validate_confounds(cfg: Phase1Config) -> None:
     done_variant_ids: set[str] = set()
     if output_path.exists():
         existing = read_jsonl(output_path)
-        done_variant_ids = {row["variant_id"] for row in existing}
-        if done_variant_ids:
+        if existing:
+            deduped: dict[str, dict] = {}
+            for row in existing:
+                deduped[row["variant_id"]] = row
+            if len(deduped) != len(existing):
+                existing = list(deduped.values())
+                write_jsonl(output_path, existing)
+                print(
+                    f"Deduped {output_path}: "
+                    f"{len(existing)} unique variant rows"
+                )
+            done_variant_ids = set(deduped.keys())
             print(
                 f"Resuming confound validation from {output_path}: "
                 f"found {len(done_variant_ids)} existing results"
             )
 
     pending = [c for c in candidates if c["variant_id"] not in done_variant_ids]
+    equivalent_skipped = 0
+    filtered_pending = []
+    for c in pending:
+        source_code = mutant_code.get(c["source_mutant_id"], "")
+        if _confound_equivalent_to_mutant(c["code"], source_code):
+            equivalent_skipped += 1
+            continue
+        filtered_pending.append(c)
+    pending = filtered_pending
 
     print(
         f"Validating {len(pending)} pending confound candidates "
         f"(total={len(candidates)}, batch_size={cfg.validate.batch_size})..."
     )
+    if equivalent_skipped:
+        print(
+            f"  Skipped {equivalent_skipped} candidates equivalent to source mutant "
+            f"(after comment/whitespace normalization)"
+        )
 
     work_dir = cfg.intermediate_dir / "confound_eval_workdir"
     # Prefer $SCRATCH for the eval workdir to avoid filling the home filesystem
@@ -208,7 +275,7 @@ def validate_confounds(cfg: Phase1Config) -> None:
         print(f"  Batch {batch_idx}: {len(batch)} candidates")
 
         batch_kept, batch_timeout = _validate_confound_batch(
-            batch, tasks, mutant_fp, cfg, work_dir, batch_idx,
+            batch, tasks, mutant_fp, mutant_code, cfg, work_dir, batch_idx,
         )
         if batch_kept:
             append_jsonl(output_path, batch_kept)

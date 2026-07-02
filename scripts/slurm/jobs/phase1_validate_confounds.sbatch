@@ -42,7 +42,7 @@ if [[ ! -d "${ENV_DIR}" ]]; then
     exit 1
 fi
 
-SIF_PATH="${SCRATCH}/containers/bigcodebench-evaluate.sif"
+SIF_PATH="${SCRATCH}/containers/evalplus-evaluate.sif"
 if [[ ! -f "${SIF_PATH}" ]]; then
     echo "Error: SIF image not found at ${SIF_PATH}"
     echo "Pull it first:  singularity pull ${SIF_PATH} docker://bigcodebench/bigcodebench-evaluate:latest"
@@ -57,6 +57,10 @@ export VALIDATE_CONFOUNDS_NUM_SHARDS
 if [[ -n "${VALIDATE_CONFOUNDS_SHARD_INDEX:-}" ]]; then
     export VALIDATE_CONFOUNDS_SHARD_INDEX
 fi
+
+# Match validate_mutants eval ceilings (see phase1_validate_mutants.sbatch).
+export BIGCODEBENCH_TIMEOUT_PER_TASK="${BIGCODEBENCH_TIMEOUT_PER_TASK:-360}"
+export BIGCODEBENCH_GT_TIMEOUT_MULTIPLIER="${BIGCODEBENCH_GT_TIMEOUT_MULTIPLIER:-15}"
 
 echo "======================================"
 echo "Phase 1 — Validate Confound Candidates"

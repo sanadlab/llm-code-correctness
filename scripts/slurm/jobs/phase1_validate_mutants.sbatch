@@ -47,7 +47,7 @@ if [[ ! -d "${ENV_DIR}" ]]; then
     exit 1
 fi
 
-SIF_PATH="${SCRATCH}/containers/bigcodebench-evaluate.sif"
+SIF_PATH="${SCRATCH}/containers/evalplus-evaluate.sif"
 if [[ ! -f "${SIF_PATH}" ]]; then
     echo "Error: SIF image not found at ${SIF_PATH}"
     echo "Pull it first:  singularity pull ${SIF_PATH} docker://bigcodebench/bigcodebench-evaluate:latest"
@@ -60,6 +60,9 @@ source "${ENV_DIR}/bin/activate"
 
 export VALIDATE_NUM_SHARDS
 export VALIDATE_RESUME_MODE
+# Per-task eval ceiling (seconds); default in BCB is 240.
+export BIGCODEBENCH_TIMEOUT_PER_TASK="${BIGCODEBENCH_TIMEOUT_PER_TASK:-360}"
+export BIGCODEBENCH_GT_TIMEOUT_MULTIPLIER="${BIGCODEBENCH_GT_TIMEOUT_MULTIPLIER:-15}"
 if [[ -n "${VALIDATE_SHARD_INDEX:-}" ]]; then
     export VALIDATE_SHARD_INDEX
 fi

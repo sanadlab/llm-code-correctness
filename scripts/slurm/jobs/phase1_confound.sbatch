@@ -1,5 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=phase1_confound
+#SBATCH --mem=128G
+#SBATCH --cpus-per-task=4
 #SBATCH --output=logs/slurm/phase1_confound.%j.out
 #SBATCH --error=logs/slurm/phase1_confound.%j.err
 

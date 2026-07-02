@@ -85,3 +85,15 @@ logs/
 # Code-reorg experiment raw outputs (tracked as compressed archives instead)
 code-reorg-results/
 code-reorg-vectors/
+
+# Phase 1/2 Uncompressed Datasets & Outputs
+dataset/deliverables/*/
+!dataset/deliverables/*.tar.gz
+!dataset/deliverables/report.json
+dataset/isolated_bigcodebench/
+dataset/isolated_humaneval/
+dataset/archive/
+
+# Root Slurm Logs
+slurm-*.out
+slurm-*.err

@@ -18,14 +18,14 @@ from src.phase1.io_utils import append_jsonl, read_jsonl, write_jsonl
 
 # Each rung is (max_batch_size, timeout_seconds).  On timeout the batch splits to
 # the next smaller rung instead of mass-marking rows as timeout.  Budgets assume
-# ~12s per mutant wall time at parallel=8 (min_time_limit=10 + overhead).
+# ~22s per mutant wall time at parallel=16 (min_time_limit=20 + overhead).
 TIMEOUT_SPLIT_LADDER: tuple[tuple[int, int], ...] = (
-    (2000, 45 * 60),
-    (1000, 25 * 60),
-    (500, 15 * 60),
-    (250, 10 * 60),
-    (100, 8 * 60),
-    (50, 5 * 60),
+    (2000, 90 * 60),
+    (1000, 50 * 60),
+    (500, 30 * 60),
+    (250, 20 * 60),
+    (100, 16 * 60),
+    (50, 10 * 60),
 )
 
 RESUME_ALL_MISSING = "all_missing"
@@ -41,6 +41,11 @@ def compute_failure_fingerprint(details: dict) -> str | None:
     """
     if not details:
         return None
+
+    if "plus_fail_tests" in details:
+        b = str(sorted(details.get("base_fail_tests", [])))
+        p = str(sorted(details.get("plus_fail_tests", [])))
+        return f"base:{b}|plus:{p}"
 
     parts = []
     for test_name in sorted(details.keys()):
@@ -134,8 +139,7 @@ def validate_mutants(cfg: Phase1Config) -> None:
                     f"preserved {len(preserved)} pass/fail rows, queued {len(timeout_ids)} timeout rows "
                     f"and {len(missing_ids)} missing rows"
                 )
-                # retry_ids = timeout_ids | missing_ids
-                retry_ids = missing_ids
+                retry_ids = timeout_ids | missing_ids
 
             pending = [m for m in mutants if m["mutant_id"] in retry_ids]
         else:
@@ -288,8 +292,11 @@ def _validate_mutant_batch(
         task_offsets[tid] += 1
 
         r = results[my_idx]
-        status = r.get("status", "fail")
-        details = r.get("details", {})
+        status = r.get("status", r.get("plus_status", "fail"))
+        if "details" not in r and "plus_fail_tests" in r:
+            details = {"plus_fail_tests": r.get("plus_fail_tests", []), "base_fail_tests": r.get("base_fail_tests", [])}
+        else:
+            details = r.get("details", {})
 
         fp = None if status == "pass" else compute_failure_fingerprint(details)
         validated.append({

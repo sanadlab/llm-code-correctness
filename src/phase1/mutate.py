@@ -102,9 +102,10 @@ def _mutate_task(task: dict, operators, log: bool = True) -> list[dict]:
             except SyntaxError:
                 continue
 
-            # Extract the mutated body: re-parse and get just the function body part
+            # Extract the mutated body, preserving original formatting for
+            # unchanged lines (comments, blanks, quote style).
             mutated_body = _extract_body_fragment(
-                full_mutated, entry_point, complete_prompt
+                full_source, tree, mut.tree, entry_point
             )
             if mutated_body is None:
                 continue
@@ -164,43 +165,131 @@ def _is_single_replacement(mutations, mut) -> bool:
     return count == 1
 
 
-def _extract_body_fragment(full_mutated_source: str, entry_point: str,
-                            complete_prompt: str) -> str | None:
-    """Extract the function body (the part corresponding to canonical_solution)
-    from the full mutated source.
-
-    Strategy: re-parse the mutated source, find the target function, unparse
-    just its body, and re-indent to match canonical_solution format.
-    """
-    try:
-        mutated_tree = ast.parse(full_mutated_source)
-    except SyntaxError:
-        return None
-
-    # Find the target function
-    target_func = None
-    for node in ast.walk(mutated_tree):
+def _find_function(tree: ast.Module, entry_point: str) -> ast.FunctionDef | None:
+    for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == entry_point:
-            target_func = node
-            break
-    if target_func is None:
-        return None
+            return node
+    return None
 
-    # Unparse individually each statement in the function body
-    # Skip leading docstring if present
-    body = target_func.body
+
+def _body_stmts_after_docstring(func: ast.FunctionDef) -> list[ast.stmt]:
+    body = func.body
     start_idx = 0
     if (body and isinstance(body[0], ast.Expr) and
-        isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str)):
+            isinstance(body[0].value, ast.Constant) and
+            isinstance(body[0].value.value, str)):
         start_idx = 1
+    return body[start_idx:]
 
-    lines = []
 
-    for stmt in body[start_idx:]:
-        stmt_source = ast.unparse(stmt)
-        # Re-indent: each line gets 4-space indent
-        for line in stmt_source.split("\n"):
-            lines.append("    " + line)
+def _stmt_dump(stmt: ast.stmt) -> str:
+    return ast.dump(stmt, annotate_fields=False, include_attributes=False)
 
-    result = "\n".join(lines) + "\n"
+
+def _classify_body_statements(
+    orig_body: list[ast.stmt],
+    mut_body: list[ast.stmt],
+) -> list[tuple[str, ast.stmt | None, ast.stmt | None]]:
+    """Align top-level body statements: keep, delete, modify, or insert."""
+    classified: list[tuple[str, ast.stmt | None, ast.stmt | None]] = []
+    i, j = 0, 0
+    while i < len(orig_body) or j < len(mut_body):
+        if i >= len(orig_body):
+            classified.append(("insert", None, mut_body[j]))
+            j += 1
+            continue
+        if j >= len(mut_body):
+            classified.append(("delete", orig_body[i], None))
+            i += 1
+            continue
+
+        orig_stmt, mut_stmt = orig_body[i], mut_body[j]
+        if _stmt_dump(orig_stmt) == _stmt_dump(mut_stmt):
+            classified.append(("keep", orig_stmt, mut_stmt))
+            i += 1
+            j += 1
+        elif (i + 1 < len(orig_body) and
+              _stmt_dump(orig_body[i + 1]) == _stmt_dump(mut_stmt)):
+            classified.append(("delete", orig_stmt, None))
+            i += 1
+        else:
+            classified.append(("modify", orig_stmt, mut_stmt))
+            i += 1
+            j += 1
+    return classified
+
+
+def _unparse_stmt_indented(stmt: ast.stmt) -> str:
+    stmt_source = ast.unparse(stmt)
+    return "\n".join("    " + line for line in stmt_source.split("\n"))
+
+
+def _extract_body_fragment(
+    full_source: str,
+    orig_tree: ast.Module,
+    mut_tree: ast.Module,
+    entry_point: str,
+) -> str | None:
+    """Extract the function body matching canonical_solution format.
+
+    Unchanged statements are copied verbatim from the original source so
+    comments, blank lines, and quote style are preserved. Only deleted or
+    modified statements are omitted or re-serialized via ast.unparse.
+    """
+    orig_func = _find_function(orig_tree, entry_point)
+    mut_func = _find_function(mut_tree, entry_point)
+    if orig_func is None or mut_func is None:
+        return None
+
+    orig_body = _body_stmts_after_docstring(orig_func)
+    mut_body = _body_stmts_after_docstring(mut_func)
+    if not orig_body and not mut_body:
+        return "\n"
+
+    classified = _classify_body_statements(orig_body, mut_body)
+    full_lines = full_source.splitlines(keepends=True)
+
+    deleted_lines: set[int] = set()
+    modified_by_start: dict[int, tuple[ast.stmt, str]] = {}
+    for kind, orig_stmt, mut_stmt in classified:
+        if kind == "delete" and orig_stmt is not None:
+            end = getattr(orig_stmt, "end_lineno", orig_stmt.lineno)
+            deleted_lines.update(range(orig_stmt.lineno, end + 1))
+        elif kind == "modify" and orig_stmt is not None and mut_stmt is not None:
+            modified_by_start[orig_stmt.lineno] = (
+                orig_stmt,
+                _unparse_stmt_indented(mut_stmt),
+            )
+        elif kind == "insert" and mut_stmt is not None:
+            modified_by_start[mut_stmt.lineno] = (
+                mut_stmt,
+                _unparse_stmt_indented(mut_stmt),
+            )
+
+    body_start = orig_body[0].lineno if orig_body else mut_body[0].lineno
+    body_end = max(
+        getattr(orig_func, "end_lineno", body_start),
+        getattr(mut_func, "end_lineno", body_start),
+    )
+
+    parts: list[str] = []
+    lineno = body_start
+    while lineno <= body_end:
+        if lineno in deleted_lines:
+            lineno += 1
+            continue
+        if lineno in modified_by_start:
+            skip_stmt, text = modified_by_start[lineno]
+            parts.append(text)
+            if not text.endswith("\n"):
+                parts.append("\n")
+            end = getattr(skip_stmt, "end_lineno", skip_stmt.lineno)
+            lineno = end + 1
+            continue
+        parts.append(full_lines[lineno - 1])
+        lineno += 1
+
+    result = "".join(parts)
+    if not result.endswith("\n"):
+        result += "\n"
     return result
