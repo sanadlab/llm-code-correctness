@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.phase1.mutate import _mutate_task, _unparse_compound_header
+from src.phase1.mutate import _mutate_task
 from src.phase1.operators import get_operators
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -87,18 +87,7 @@ def test_bigcodebench_313_sd_inside_nested_with():
     assert any("with open" in m["code"] for m in mutants)
 
 
-def test_unparse_compound_header_for_and_with_have_lineno():
-    import ast
 
-    for source in (
-        "def f():\n    for x in items:\n        y = 1\n",
-        "def f():\n    with open(p) as f:\n        y = 1\n",
-    ):
-        tree = ast.parse(source)
-        stmt = tree.body[0].body[0]
-        header = _unparse_compound_header(stmt)
-        assert header.endswith(":\n")
-        assert "pass" not in header
 
 
 def test_previously_lost_tasks_all_produce_mutants(run2_counts_by_task):

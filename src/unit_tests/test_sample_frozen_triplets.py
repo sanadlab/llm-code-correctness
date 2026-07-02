@@ -2,7 +2,7 @@
 from collections import Counter
 from pathlib import Path
 
-from scripts.sample_frozen_triplets import (
+from scripts.utils.sample_frozen_triplets import (
     stratified_triplet_sample,
     triplet_candidates,
     triplet_to_frozen_record,

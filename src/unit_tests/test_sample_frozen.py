@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from collections import Counter
 
-from scripts.sample_frozen import (
+from scripts.utils.sample_frozen import (
     allocate_counts,
     sample_task_diverse,
     stratified_sample,
