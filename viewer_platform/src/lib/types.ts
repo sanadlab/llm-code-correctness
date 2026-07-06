@@ -67,8 +67,8 @@ export interface LoadedDataset {
 export interface ReviewRecord {
   decision: ReviewDecision;
   updatedAt: string;
-  comment?: string;
-  reviewer?: string;
+  annotator?: string;
+  annotation?: string;
 }
 
 export type ReviewMatrix = Record<string, Record<string, ReviewRecord>>;

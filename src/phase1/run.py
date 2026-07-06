@@ -35,7 +35,7 @@ STEP_DEPS = {
     "validate_mutants": ["mutants_path", "validated_tasks_path"],
     "confound": ["validated_mutants_path"],
     "validate_confounds": ["confound_candidates_path", "validated_tasks_path", "validated_mutants_path"],
-    "freeze": ["validated_mutants_path", "validated_confounded_path", "validated_tasks_path", "tasks_path"],
+    "freeze": ["validated_mutants_path", "validated_confounded_path", "validated_tasks_path"],
 }
 
 # Map step -> output file (for resume check)
@@ -82,7 +82,10 @@ def _run_step(cfg, step: str) -> None:
     print(f"{'='*60}")
 
     if step == "load":
-        from src.phase1.load import load_tasks
+        if cfg.benchmark == "humaneval":
+            from src.phase1.load_he import load_tasks
+        else:
+            from src.phase1.load import load_tasks
         load_tasks(cfg)
 
     elif step == "validate_ground_truth":

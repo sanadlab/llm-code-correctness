@@ -1,0 +1,51 @@
+benchmark: humaneval
+subset: full
+seed: 0
+output_root: dataset/isolated_humaneval
+validate:
+  docker_image: ganler/evalplus:latest
+  docker_script: scripts/eval/run_evalplus_eval.sh
+  split: complete
+  min_time_limit: 20
+  parallel: 8
+  batch_size: 250
+  container_runtime: singularity
+  sif_path: /scratch/mki4895/containers/evalplus-evaluate.sif
+confound:
+  enabled: true
+  max_variants_per_mutant: 1
+  chunk_size: 500
+  local:
+    model: Qwen/Qwen2.5-Coder-32B-Instruct
+    dtype: bfloat16
+    tensor_parallel_size: 2
+    temperature: 0.2
+    top_p: 0.95
+    max_tokens: 2048
+    gpu_memory_utilization: 0.90
+    prompt_template_version: v1
+operators:
+  include:
+    - AOR
+    - AOI
+    - AOD
+    - ROR
+    - COR
+    - COD
+    - UOI
+    - UOD
+    - CR
+    - VVR
+    - VCR
+    - CVR
+    - SD
+    - RVM
+    - TR
+    - FR
+    - RC
+    - NEG
+    - FCD
+    - CRN
+    - BOR
+    - BSOR
+    - BSOD

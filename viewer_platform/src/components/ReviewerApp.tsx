@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildDataset, inferSchemaFromFilename } from "@/lib/parsers";
 import {
-  applyDecisionToMatrix,
-  getReviewsForReviewer,
-  loadReviewMatrix,
-  normalizeReviewerName,
-  persistReviewMatrix,
+  buildExport,
+  downloadJson,
+  loadReviews,
+  updateReview,
+  importReviews,
 } from "@/lib/review-store";
 import { parseJsonl } from "@/lib/jsonl";
 import {
@@ -15,13 +15,7 @@ import {
   itemHasVariantRole,
 } from "@/lib/review-items";
 import { uploadCategoryById, type UploadCategoryId } from "@/lib/upload-categories";
-import type {
-  CodeVariantRole,
-  DatasetSchema,
-  LoadedDataset,
-  ReviewDecision,
-  ReviewMatrix,
-} from "@/lib/types";
+import type { CodeVariantRole, LoadedDataset, ReviewDecision, ReviewRecord } from "@/lib/types";
 import { DataSourcePanel } from "./DataSourcePanel";
 import { ReviewCard } from "./ReviewCard";
 
@@ -30,7 +24,7 @@ type QueueFilterMode = "all" | "unreviewed" | "reviewed-1" | "reviewed-2plus";
 
 export function ReviewerApp() {
   const [dataset, setDataset] = useState<LoadedDataset | null>(null);
-  const [reviewMatrix, setReviewMatrix] = useState<ReviewMatrix>({});
+  const [reviews, setReviews] = useState<Record<string, ReviewRecord>>({});
   const [index, setIndex] = useState(0);
   const [filter, setFilter] = useState<FilterMode>("all");
   const [queueFilter, setQueueFilter] = useState<QueueFilterMode>("all");
@@ -40,15 +34,7 @@ export function ReviewerApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [maxUploadRecords, setMaxUploadRecords] = useState(500);
-  const [draftComment, setDraftComment] = useState("");
-  const [reviewerName, setReviewerName] = useState("reviewer-1");
-  const [sourceRecordsForExport, setSourceRecordsForExport] = useState<
-    Record<string, unknown>[] | null
-  >(null);
-  const [exporting, setExporting] = useState(false);
-  const [exportStatus, setExportStatus] = useState<string | null>(null);
-  const [storageNotice, setStorageNotice] = useState<string | null>(null);
-  const [loadedWithoutCanonicalJoin, setLoadedWithoutCanonicalJoin] = useState(false);
+  const [annotator, setAnnotator] = useState("");
 
   const handleDatasetLoaded = useCallback((loaded: LoadedDataset) => {
     setDataset(loaded);
@@ -247,39 +233,45 @@ export function ReviewerApp() {
   const applyDecision = useCallback(
     (decision: ReviewDecision, advance = false) => {
       if (!dataset || !current) return;
-      const nextReviews = applyDecisionToMatrix(
-        reviewMatrix,
-        current.id,
-        reviewerId,
-        decision,
-        draftComment.trim() || undefined,
-      );
-      setReviewMatrix(nextReviews);
-      const persisted = persistReviewMatrix(dataset.name, nextReviews);
-      if (!persisted.ok) {
-        setStorageNotice(
-          "Could not save to browser storage (quota full). Your reviews still work in this session — export before closing.",
-        );
-      }
+      const nextReviews = updateReview(dataset.name, current.id, { decision, annotator });
+      setReviews(nextReviews);
       if (advance && index < filteredItems.length - 1) {
         setIndex((i) => i + 1);
       }
     },
-    [dataset, current, reviewMatrix, reviewerId, draftComment, index, filteredItems.length],
+    [dataset, current, index, filteredItems.length, annotator],
   );
 
-  const saveComment = useCallback(() => {
-    if (!dataset || !current) return;
-    const nextReviews = applyDecisionToMatrix(
-      reviewMatrix,
-      current.id,
-      reviewerId,
-      currentDecision,
-      draftComment.trim() || undefined,
-    );
-    setReviewMatrix(nextReviews);
-    persistReviewMatrix(dataset.name, nextReviews);
-  }, [dataset, current, reviewMatrix, reviewerId, currentDecision, draftComment]);
+  const handleUpdateAnnotation = useCallback(
+    (annotation: string) => {
+      if (!dataset || !current) return;
+      const nextReviews = updateReview(dataset.name, current.id, { annotation, annotator });
+      setReviews(nextReviews);
+    },
+    [dataset, current, annotator]
+  );
+
+  const handleImportReviews = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !dataset) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target?.result as string;
+        const data = JSON.parse(text);
+        if (data && data.decisions) {
+          const nextReviews = importReviews(dataset.name, data.decisions);
+          setReviews(nextReviews);
+        } else {
+          setError("Invalid reviews export format.");
+        }
+      } catch {
+        setError("Failed to parse the imported JSON file.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }, [dataset]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -517,14 +509,31 @@ export function ReviewerApp() {
               active={showPrompt}
               onClick={() => setShowPrompt((v) => !v)}
             />
-            <button
-              type="button"
-              onClick={exportReviews}
-              disabled={exporting}
-              className="btn-secondary ml-auto disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {exporting ? "Preparing export..." : "Export reviews"}
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Annotator name"
+                value={annotator}
+                onChange={(e) => setAnnotator(e.target.value)}
+                className="input-field text-sm"
+              />
+              <label className="btn-secondary cursor-pointer">
+                Import reviews
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={handleImportReviews}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={exportReviews}
+                className="btn-primary"
+              >
+                Export reviews
+              </button>
+            </div>
           </div>
 
           {exportStatus && (
@@ -542,7 +551,7 @@ export function ReviewerApp() {
                 index={index}
                 total={filteredItems.length}
                 decision={currentDecision}
-                comment={draftComment}
+                annotation={reviews[current.id]?.annotation ?? ""}
                 viewMode={viewMode}
                 showPrompt={showPrompt}
                 onShowPromptChange={setShowPrompt}
@@ -551,6 +560,7 @@ export function ReviewerApp() {
                 onApprove={() => applyDecision("approved", true)}
                 onDiscard={() => applyDecision("discarded", true)}
                 onClear={() => applyDecision("pending")}
+                onAnnotationChange={handleUpdateAnnotation}
                 onPrev={() => setIndex((i) => Math.max(0, i - 1))}
                 onNext={() =>
                   setIndex((i) => Math.min(filteredItems.length - 1, i + 1))

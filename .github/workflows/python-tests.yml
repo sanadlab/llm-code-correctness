@@ -1,12 +1,8 @@
 name: Python Unit Tests
 
-# Trigger on pushes to main/feature branches and on PRs targeting main.
+# Run unit tests on every branch push and on PRs targeting main.
 on:
   push:
-    branches:
-      - main
-      - Mahmoud-phase1-first-trials
-      - mahmoud-unit-testing-for-mutation
   pull_request:
     branches:
       - main

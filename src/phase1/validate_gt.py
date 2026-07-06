@@ -35,8 +35,11 @@ def validate_ground_truth(cfg: Phase1Config) -> None:
         if results:
             # Take the first (and only) result for this task
             r = results[0] if isinstance(results, list) else results
-            status = r.get("status", "fail")
-            details = r.get("details", {})
+            status = r.get("status", r.get("plus_status", "fail"))
+            if "details" not in r and "plus_fail_tests" in r:
+                details = {"plus_fail_tests": r.get("plus_fail_tests", []), "base_fail_tests": r.get("base_fail_tests", [])}
+            else:
+                details = r.get("details", {})
         else:
             status = "fail"
             details = {"ALL": "No evaluation result returned from Docker"}

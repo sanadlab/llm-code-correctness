@@ -1,12 +1,12 @@
 benchmark: bigcodebench
 subset: full
 seed: 0
-output_root: dataset/bigcodebench
+output_root: dataset/isolated_bigcodebench
 validate:
   docker_image: bigcodebench/bigcodebench-evaluate:latest
   docker_script: scripts/eval/run_bigcodebench_eval.sh
   split: complete
-  min_time_limit: 10
+  min_time_limit: 20
   parallel: 8
   batch_size: 250
   container_runtime: singularity

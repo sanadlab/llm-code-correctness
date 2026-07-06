@@ -1,11 +1,4 @@
-import type {
-  DatasetSchema,
-  ReviewDecision,
-  ReviewExport,
-  ReviewItem,
-  ReviewMatrix,
-  ReviewRecord,
-} from "./types";
+import type { ReviewExport, ReviewRecord } from "./types";
 
 const STORAGE_PREFIX = "llm-code-review:";
 
@@ -131,17 +124,29 @@ export function persistReviewMatrix(
   return saveReviews(datasetName, compactReviewMatrix(matrix));
 }
 
-export function setDecision(
+export function updateReview(
   datasetName: string,
   itemId: string,
-  reviewer: string,
-  decision: ReviewDecision,
-  comment?: string,
-): ReviewMatrix {
-  const reviews = loadReviewMatrix(datasetName);
-  const next = applyDecisionToMatrix(reviews, itemId, reviewer, decision, comment);
-  persistReviewMatrix(datasetName, next);
-  return next;
+  data: Partial<ReviewRecord>,
+): Record<string, ReviewRecord> {
+  const reviews = loadReviews(datasetName);
+  const current = reviews[itemId] ?? { decision: "pending" };
+  reviews[itemId] = { ...current, ...data, updatedAt: new Date().toISOString() };
+  saveReviews(datasetName, reviews);
+  return reviews;
+}
+
+export function importReviews(
+  datasetName: string,
+  importedDecisions: Record<string, ReviewRecord>
+): Record<string, ReviewRecord> {
+  const current = loadReviews(datasetName);
+  const merged = { ...current };
+  for (const [id, record] of Object.entries(importedDecisions)) {
+    merged[id] = { ...merged[id], ...record };
+  }
+  saveReviews(datasetName, merged);
+  return merged;
 }
 
 export function buildExport(

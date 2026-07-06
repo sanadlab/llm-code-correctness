@@ -12,12 +12,11 @@ type ReviewCardProps = {
   index: number;
   total: number;
   decision: ReviewDecision;
-  comment: string;
+  annotation: string;
   viewMode: "diff" | "split";
   showPrompt: boolean;
   onShowPromptChange?: (open: boolean) => void;
-  onCommentChange: (value: string) => void;
-  onCommentSave: () => void;
+  onAnnotationChange?: (value: string) => void;
   onApprove: () => void;
   onDiscard: () => void;
   onClear: () => void;
@@ -36,12 +35,11 @@ export function ReviewCard({
   index,
   total,
   decision,
-  comment,
+  annotation,
   viewMode,
   showPrompt,
   onShowPromptChange,
-  onCommentChange,
-  onCommentSave,
+  onAnnotationChange,
   onApprove,
   onDiscard,
   onClear,
@@ -145,6 +143,19 @@ export function ReviewCard({
           )}
         </div>
       )}
+
+      <div className="border-t border-[var(--border)] bg-[var(--surface-elevated)] p-5">
+        <label className="block text-sm font-medium text-[var(--text)] mb-2">
+          Notes / Annotations
+        </label>
+        <textarea
+          value={annotation}
+          onChange={(e) => onAnnotationChange?.(e.target.value)}
+          placeholder="Add any specific details, patterns, or reasoning for cross-reviewing..."
+          className="w-full rounded-md border border-[var(--border)] bg-white p-3 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] dark:bg-zinc-900"
+          rows={3}
+        />
+      </div>
 
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] bg-[var(--surface-elevated)] px-5 py-4">
         <div className="flex w-full flex-col gap-3">

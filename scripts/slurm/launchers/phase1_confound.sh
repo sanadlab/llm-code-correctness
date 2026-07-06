@@ -12,6 +12,7 @@ JOB_NAME="phase1_confound"
 PARTITION="nvidia"
 ACCOUNT=""
 GPUS=1
+GRES="gpu:a100:1"
 CPUS=8
 MEM="16G"
 TIME="04:00:00"
@@ -45,7 +46,8 @@ Options:
   --job-name NAME         SLURM job name (default: phase1_confound)
     --partition NAME        SLURM partition (default: nvidia)
     --account NAME          SLURM account (default: none)
-    --gpus N                Number of GPUs to request (default: 1)
+    --gpus N                Number of A100 GPUs to request (default: 1)
+    --gres SPEC             SLURM --gres value (default: gpu:a100:1)
     --cpus N                Number of CPUs to request (default: 4)
     --mem SIZE              Memory request (default: 16G)
     --time HH:MM:SS         Wall-clock limit (default: 00:10:00)
@@ -89,6 +91,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --gpus)
             GPUS="$2"
+            GRES="gpu:a100:${GPUS}"
+            shift 2
+            ;;
+        --gres)
+            GRES="$2"
             shift 2
             ;;
         --cpus)
@@ -157,7 +164,7 @@ cmd=(
     --output "logs/slurm/${JOB_NAME}.%j.out"
     --error "logs/slurm/${JOB_NAME}.%j.err"
     --partition "${PARTITION}"
-    --gres "gpu:${GPUS}"
+    --gres "${GRES}"
     --cpus-per-task "${CPUS}"
     --mem "${MEM}"
     --time "${TIME}"
