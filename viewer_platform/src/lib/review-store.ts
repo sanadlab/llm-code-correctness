@@ -1,4 +1,4 @@
-import type { ReviewDecision, ReviewExport, ReviewRecord } from "./types";
+import type { ReviewExport, ReviewRecord } from "./types";
 
 const STORAGE_PREFIX = "llm-code-review:";
 
@@ -24,15 +24,29 @@ export function saveReviews(
   localStorage.setItem(storageKey(datasetName), JSON.stringify(reviews));
 }
 
-export function setDecision(
+export function updateReview(
   datasetName: string,
   itemId: string,
-  decision: ReviewDecision,
+  data: Partial<ReviewRecord>,
 ): Record<string, ReviewRecord> {
   const reviews = loadReviews(datasetName);
-  reviews[itemId] = { decision, updatedAt: new Date().toISOString() };
+  const current = reviews[itemId] ?? { decision: "pending" };
+  reviews[itemId] = { ...current, ...data, updatedAt: new Date().toISOString() };
   saveReviews(datasetName, reviews);
   return reviews;
+}
+
+export function importReviews(
+  datasetName: string,
+  importedDecisions: Record<string, ReviewRecord>
+): Record<string, ReviewRecord> {
+  const current = loadReviews(datasetName);
+  const merged = { ...current };
+  for (const [id, record] of Object.entries(importedDecisions)) {
+    merged[id] = { ...merged[id], ...record };
+  }
+  saveReviews(datasetName, merged);
+  return merged;
 }
 
 export function buildExport(

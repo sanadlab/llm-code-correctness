@@ -6,7 +6,8 @@ import {
   buildExport,
   downloadJson,
   loadReviews,
-  setDecision,
+  updateReview,
+  importReviews,
 } from "@/lib/review-store";
 import {
   countVariantsByRole,
@@ -14,7 +15,7 @@ import {
   itemHasVariantRole,
 } from "@/lib/review-items";
 import { uploadCategoryById, type UploadCategoryId } from "@/lib/upload-categories";
-import type { CodeVariantRole, LoadedDataset, ReviewDecision } from "@/lib/types";
+import type { CodeVariantRole, LoadedDataset, ReviewDecision, ReviewRecord } from "@/lib/types";
 import { DataSourcePanel } from "./DataSourcePanel";
 import { ReviewCard } from "./ReviewCard";
 
@@ -22,9 +23,7 @@ type FilterMode = "all" | "pending" | "approved" | "discarded";
 
 export function ReviewerApp() {
   const [dataset, setDataset] = useState<LoadedDataset | null>(null);
-  const [reviews, setReviews] = useState<
-    Record<string, { decision: ReviewDecision; updatedAt: string }>
-  >({});
+  const [reviews, setReviews] = useState<Record<string, ReviewRecord>>({});
   const [index, setIndex] = useState(0);
   const [filter, setFilter] = useState<FilterMode>("all");
   const [kindFilter, setKindFilter] = useState<CodeVariantRole | "all">("all");
@@ -33,6 +32,7 @@ export function ReviewerApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [maxUploadRecords, setMaxUploadRecords] = useState(500);
+  const [annotator, setAnnotator] = useState("");
 
   const handleDatasetLoaded = useCallback((loaded: LoadedDataset) => {
     setDataset(loaded);
@@ -173,14 +173,45 @@ export function ReviewerApp() {
   const applyDecision = useCallback(
     (decision: ReviewDecision, advance = false) => {
       if (!dataset || !current) return;
-      const nextReviews = setDecision(dataset.name, current.id, decision);
+      const nextReviews = updateReview(dataset.name, current.id, { decision, annotator });
       setReviews(nextReviews);
       if (advance && index < filteredItems.length - 1) {
         setIndex((i) => i + 1);
       }
     },
-    [dataset, current, index, filteredItems.length],
+    [dataset, current, index, filteredItems.length, annotator],
   );
+
+  const handleUpdateAnnotation = useCallback(
+    (annotation: string) => {
+      if (!dataset || !current) return;
+      const nextReviews = updateReview(dataset.name, current.id, { annotation, annotator });
+      setReviews(nextReviews);
+    },
+    [dataset, current, annotator]
+  );
+
+  const handleImportReviews = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !dataset) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target?.result as string;
+        const data = JSON.parse(text);
+        if (data && data.decisions) {
+          const nextReviews = importReviews(dataset.name, data.decisions);
+          setReviews(nextReviews);
+        } else {
+          setError("Invalid reviews export format.");
+        }
+      } catch {
+        setError("Failed to parse the imported JSON file.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }, [dataset]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -328,13 +359,31 @@ export function ReviewerApp() {
               active={showPrompt}
               onClick={() => setShowPrompt((v) => !v)}
             />
-            <button
-              type="button"
-              onClick={exportReviews}
-              className="btn-secondary ml-auto"
-            >
-              Export reviews
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Annotator name"
+                value={annotator}
+                onChange={(e) => setAnnotator(e.target.value)}
+                className="input-field text-sm"
+              />
+              <label className="btn-secondary cursor-pointer">
+                Import reviews
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={handleImportReviews}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={exportReviews}
+                className="btn-primary"
+              >
+                Export reviews
+              </button>
+            </div>
           </div>
 
           {filteredItems.length === 0 ? (
@@ -348,12 +397,14 @@ export function ReviewerApp() {
                 index={index}
                 total={filteredItems.length}
                 decision={currentDecision}
+                annotation={reviews[current.id]?.annotation ?? ""}
                 viewMode={viewMode}
                 showPrompt={showPrompt}
                 onShowPromptChange={setShowPrompt}
                 onApprove={() => applyDecision("approved", true)}
                 onDiscard={() => applyDecision("discarded", true)}
                 onClear={() => applyDecision("pending")}
+                onAnnotationChange={handleUpdateAnnotation}
                 onPrev={() => setIndex((i) => Math.max(0, i - 1))}
                 onNext={() =>
                   setIndex((i) => Math.min(filteredItems.length - 1, i + 1))

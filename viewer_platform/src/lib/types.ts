@@ -67,6 +67,8 @@ export interface LoadedDataset {
 export interface ReviewRecord {
   decision: ReviewDecision;
   updatedAt: string;
+  annotator?: string;
+  annotation?: string;
 }
 
 export interface ReviewExport {
