@@ -15,37 +15,31 @@ The dataset is partitioned using a **Custom Random 10-fold Cross-Validation** ap
   - `BigCodeBench`: 1,135 core tasks
   - `HumanEval`: 151 core tasks
 
-## Experimental Configurations
+## Experimental Configurations (The Directory Structure)
 
-The deliverables are organized into different experimental configurations representing varying levels of task complexity (canonical only, mutants, and confounds). Across all configurations, the task-level cross-validation splits remain perfectly aligned.
+The final deliverables are organized into a strict hierarchy representing baseline tests, standard bug detection scenarios, and advanced transfer-learning ablations.
 
-### 1. `S0-BCB` (BigCodeBench Canonical)
-- **Contents**: Purely canonical (correct) human-written solutions. No mutants or confounds are included.
-- **Average Fold Sizes**:
-  - Fit: ~113 tasks
-  - Val: ~114 tasks
-  - Test: ~908 tasks
+### The Frozen Datasets
+- **`frozen-BCB.jsonl` & `frozen-HE.jsonl`**: The raw, un-split master datasets containing all tasks, generated implementations (mutants and confounds), and metadata before any cross-validation splits were applied.
 
-### 2. `S0-HE` (HumanEval Canonical)
-- **Contents**: Purely canonical (correct) HumanEval tasks. Used primarily as an isolated, out-of-distribution test set.
-- **Average Fold Sizes**:
-  - Fit: ~15 tasks
-  - Val: ~15 tasks
-  - Test: ~121 tasks
+### S0: Baselines (Canonical Only)
+These folders contain strictly correct, human-written canonical solutions with no synthetic bugs or confounds injected. They are primarily used as pure baselines or for out-of-distribution evaluation.
+- **`S0-BCB`**: BigCodeBench canonical baseline.
+- **`S0-HE`**: HumanEval canonical baseline.
 
-### 3. `S1-M` (Mutants Only)
-- **Contents**: Canonical tasks enriched with semantic mutants (bugs).
-- **Average Fold 0 Statistics** (representative):
-  - Fit: 113 canonical, 2,775 mutants
-  - Val: 114 canonical, 2,829 mutants
-  - Test: 908 canonical, 22,324 mutants
+### S1: Standard In-Domain Configurations
+These are the standard 10-fold cross-validation setups where models are trained and tested on data drawn from the *same* dataset domain.
+- **`S1-M-BCB` / `S1-M-HE`**: Baseline configurations containing canonical tasks enriched with **Mutants** (semantic bugs). 
+- **`S1-MC-BCB` / `S1-MC-HE`**: The most comprehensive and challenging configuration. Contains canonical solutions, semantic **Mutants**, and deeply intertwined **Confounds** (distractors).
 
-### 4. `S1-MC` (Mutants and Confounds)
-- **Contents**: The most comprehensive and challenging dataset configuration. Includes canonical solutions, semantic mutants, and deeply intertwined confounds (distractors).
-- **Average Fold 0 Statistics** (representative):
-  - Fit: 113 canonical, 2,775 mutants, 1,675 confounds
-  - Val: 114 canonical, 2,829 mutants, 1,653 confounds
-  - Test: 908 canonical, 22,324 mutants, 13,706 confounds
+### S2: Cross-Domain & Ablation Configurations
+The S2 folders contain advanced validation setups for testing robustness, early-stopping behavior, and transfer learning capabilities.
+- **Cross-Domain Evaluation**:
+  - **`S2-M-BCB-testHE`**: Fits the model on BigCodeBench mutants, but tests it strictly on HumanEval baseline tasks.
+  - **`S2-M-HE-testBCB`**: Fits the model on HumanEval mutants, but tests it on BigCodeBench baseline tasks.
+- **Validation Ablations (`valICSE` vs `valSYN`)**:
+  - **`*-valICSE`** (e.g., `S2-MC-BCB-valICSE`): The model fits on synthetic data (mutants/confounds), but its **validation set** consists *only* of canonical, correct implementations (from the S0 baseline). This tests how models perform when early-stopping on pure human-written data.
+  - **`*-valSYN`** (e.g., `S2-MC-BCB-valSYN`): The model fits on synthetic data, and its validation set is also fully synthetic (contains bugs/confounds).
 
 ## Artifacts included
 - **`report.json`**: Contains the full exact counts for every single split across all 10 folds and configurations. 
