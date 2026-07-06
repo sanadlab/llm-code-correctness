@@ -8,10 +8,43 @@ export function storageKey(datasetName: string): string {
 
 export function loadReviews(datasetName: string): Record<string, ReviewRecord> {
   if (typeof window === "undefined") return {};
+  const matrix = loadReviewMatrix(datasetName);
+  const firstReviewer = Object.keys(matrix[Object.keys(matrix)[0] ?? ""] ?? {})[0];
+  if (!firstReviewer) return {};
+  return getReviewsForReviewer(matrix, firstReviewer);
+}
+
+export function normalizeReviewerName(name: string): string {
+  const normalized = name.trim().toLowerCase().replace(/\s+/g, "-");
+  return normalized || "reviewer-1";
+}
+
+export function loadReviewMatrix(datasetName: string): ReviewMatrix {
+  if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(storageKey(datasetName));
     if (!raw) return {};
-    return JSON.parse(raw) as Record<string, ReviewRecord>;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+
+    // Backward compatibility: old format stored direct item -> ReviewRecord.
+    const maybeOld = parsed as Record<string, ReviewRecord>;
+    const looksOld = Object.values(maybeOld).some(
+      (value) =>
+        value &&
+        typeof value === "object" &&
+        "decision" in value &&
+        "updatedAt" in value,
+    );
+    if (looksOld) {
+      const migrated: ReviewMatrix = {};
+      for (const [itemId, record] of Object.entries(maybeOld)) {
+        migrated[itemId] = { "reviewer-1": { ...record, reviewer: "reviewer-1" } };
+      }
+      return migrated;
+    }
+
+    return parsed as ReviewMatrix;
   } catch {
     return {};
   }
@@ -19,9 +52,76 @@ export function loadReviews(datasetName: string): Record<string, ReviewRecord> {
 
 export function saveReviews(
   datasetName: string,
-  reviews: Record<string, ReviewRecord>,
-): void {
-  localStorage.setItem(storageKey(datasetName), JSON.stringify(reviews));
+  reviews: ReviewMatrix,
+): { ok: boolean; reason?: string } {
+  try {
+    localStorage.setItem(storageKey(datasetName), JSON.stringify(reviews));
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to persist reviews";
+    return { ok: false, reason: message };
+  }
+}
+
+export function getReviewsForReviewer(
+  matrix: ReviewMatrix,
+  reviewer: string,
+): Record<string, ReviewRecord> {
+  const reviews: Record<string, ReviewRecord> = {};
+  for (const [itemId, byReviewer] of Object.entries(matrix)) {
+    const record = byReviewer[reviewer];
+    if (record) reviews[itemId] = record;
+  }
+  return reviews;
+}
+
+/** Merge one decision into an in-memory matrix (does not read localStorage). */
+export function applyDecisionToMatrix(
+  matrix: ReviewMatrix,
+  itemId: string,
+  reviewer: string,
+  decision: ReviewDecision,
+  comment?: string,
+): ReviewMatrix {
+  return {
+    ...matrix,
+    [itemId]: {
+      ...(matrix[itemId] ?? {}),
+      [reviewer]: {
+        decision,
+        updatedAt: new Date().toISOString(),
+        comment,
+        reviewer,
+      },
+    },
+  };
+}
+
+/** Keep only non-pending decisions to reduce localStorage size. */
+export function compactReviewMatrix(matrix: ReviewMatrix): ReviewMatrix {
+  const compact: ReviewMatrix = {};
+  for (const [itemId, byReviewer] of Object.entries(matrix)) {
+    const kept: Record<string, ReviewRecord> = {};
+    for (const [rid, record] of Object.entries(byReviewer)) {
+      if (record.decision !== "pending") {
+        kept[rid] = {
+          decision: record.decision,
+          updatedAt: record.updatedAt,
+          reviewer: record.reviewer ?? rid,
+          ...(record.comment ? { comment: record.comment } : {}),
+        };
+      }
+    }
+    if (Object.keys(kept).length > 0) compact[itemId] = kept;
+  }
+  return compact;
+}
+
+export function persistReviewMatrix(
+  datasetName: string,
+  matrix: ReviewMatrix,
+): { ok: boolean; reason?: string } {
+  return saveReviews(datasetName, compactReviewMatrix(matrix));
 }
 
 export function updateReview(
@@ -51,28 +151,45 @@ export function importReviews(
 
 export function buildExport(
   datasetName: string,
-  schema: ReviewExport["schema"],
-  itemIds: string[],
+  schema: DatasetSchema,
+  reviewer: string,
+  queueFilter: ReviewExport["queueFilter"],
+  items: ReviewItem[],
+  reviewsByItem: ReviewMatrix,
 ): ReviewExport {
-  const reviews = loadReviews(datasetName);
   let approved = 0;
   let discarded = 0;
   let pending = 0;
 
-  for (const id of itemIds) {
-    const decision = reviews[id]?.decision ?? "pending";
+  for (const item of items) {
+    const decision = reviewsByItem[item.id]?.[reviewer]?.decision ?? "pending";
     if (decision === "approved") approved += 1;
     else if (decision === "discarded") discarded += 1;
     else pending += 1;
   }
 
+  const exportItems = items.map((item) => ({
+    id: item.id,
+    taskId: item.taskId,
+    title: item.title,
+    subtitle: item.subtitle,
+    prompt: item.prompt,
+    test: item.test,
+    variants: item.variants,
+    metadata: item.metadata,
+    reviews: reviewsByItem[item.id] ?? {},
+  }));
+
   return {
     datasetName,
     exportedAt: new Date().toISOString(),
     schema,
-    decisions: reviews,
+    reviewer,
+    queueFilter,
+    reviewsByItem,
+    items: exportItems,
     summary: {
-      total: itemIds.length,
+      total: items.length,
       approved,
       discarded,
       pending,

@@ -71,11 +71,26 @@ export interface ReviewRecord {
   annotation?: string;
 }
 
+export type ReviewMatrix = Record<string, Record<string, ReviewRecord>>;
+
 export interface ReviewExport {
   datasetName: string;
   exportedAt: string;
   schema: DatasetSchema;
-  decisions: Record<string, ReviewRecord>;
+  reviewer: string;
+  queueFilter: "all" | "unreviewed" | "reviewed-1" | "reviewed-2plus";
+  reviewsByItem: ReviewMatrix;
+  items: Array<{
+    id: string;
+    taskId: string;
+    title: string;
+    subtitle?: string;
+    prompt?: string;
+    test?: string;
+    variants?: CodeVariant[];
+    metadata: Record<string, unknown>;
+    reviews: Record<string, ReviewRecord>;
+  }>;
   summary: {
     total: number;
     approved: number;

@@ -9,9 +9,9 @@ import {
   updateReview,
   importReviews,
 } from "@/lib/review-store";
+import { parseJsonl } from "@/lib/jsonl";
 import {
   countVariantsByRole,
-  filterItemVariants,
   itemHasVariantRole,
 } from "@/lib/review-items";
 import { uploadCategoryById, type UploadCategoryId } from "@/lib/upload-categories";
@@ -20,12 +20,14 @@ import { DataSourcePanel } from "./DataSourcePanel";
 import { ReviewCard } from "./ReviewCard";
 
 type FilterMode = "all" | "pending" | "approved" | "discarded";
+type QueueFilterMode = "all" | "unreviewed" | "reviewed-1" | "reviewed-2plus";
 
 export function ReviewerApp() {
   const [dataset, setDataset] = useState<LoadedDataset | null>(null);
   const [reviews, setReviews] = useState<Record<string, ReviewRecord>>({});
   const [index, setIndex] = useState(0);
   const [filter, setFilter] = useState<FilterMode>("all");
+  const [queueFilter, setQueueFilter] = useState<QueueFilterMode>("all");
   const [kindFilter, setKindFilter] = useState<CodeVariantRole | "all">("all");
   const [viewMode, setViewMode] = useState<"diff" | "split">("diff");
   const [showPrompt, setShowPrompt] = useState(false);
@@ -36,10 +38,17 @@ export function ReviewerApp() {
 
   const handleDatasetLoaded = useCallback((loaded: LoadedDataset) => {
     setDataset(loaded);
-    setReviews(loadReviews(loaded.name));
+    setReviewMatrix(loadReviewMatrix(loaded.name));
+    setSourceRecordsForExport(null);
     setIndex(0);
     setError(null);
   }, []);
+
+  const reviewerId = useMemo(() => normalizeReviewerName(reviewerName), [reviewerName]);
+  const reviews = useMemo(
+    () => getReviewsForReviewer(reviewMatrix, reviewerId),
+    [reviewMatrix, reviewerId],
+  );
 
   const loadFromTexts = useCallback(
     (
@@ -51,6 +60,7 @@ export function ReviewerApp() {
         schema?: LoadedDataset["schema"];
         truncated?: boolean;
         sourcePath?: string;
+        reviewMatrixOverride?: ReviewMatrix;
       } = {},
     ) => {
       setLoading(true);
@@ -67,6 +77,18 @@ export function ReviewerApp() {
           sourcePath: options.sourcePath,
         });
         handleDatasetLoaded(loaded);
+        if (options.reviewMatrixOverride) {
+          setReviewMatrix(options.reviewMatrixOverride);
+          // Imported _review data can be huge — keep in memory; only persist compact deltas.
+          const persisted = persistReviewMatrix(loaded.name, options.reviewMatrixOverride);
+          if (!persisted.ok) {
+            setStorageNotice(
+              "Prior reviews loaded for this session. Browser storage is full, so only new decisions are saved locally.",
+            );
+          } else {
+            setStorageNotice(null);
+          }
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to parse JSONL");
         setDataset(null);
@@ -81,25 +103,48 @@ export function ReviewerApp() {
     (params: {
       categoryId: UploadCategoryId;
       primaryText: string;
+      fullPrimaryText: string;
       tasksText?: string;
       mutantsText?: string;
       fileName: string;
       truncated: boolean;
     }) => {
       const cat = uploadCategoryById(params.categoryId);
+      const firstRow = JSON.parse(params.primaryText.split("\n")[0] || "{}") as Record<
+        string,
+        unknown
+      >;
+      const inferred = inferSchemaFromFilename(params.fileName, firstRow);
       const schema =
-        cat?.schema && cat.schema !== "auto"
-          ? cat.schema
-          : inferSchemaFromFilename(
-              params.fileName,
-              JSON.parse(params.primaryText.split("\n")[0] || "{}"),
-            );
+        inferred !== "unknown"
+          ? inferred
+          : cat?.schema && cat.schema !== "auto"
+            ? cat.schema
+            : "unknown";
+
+      setLoadedWithoutCanonicalJoin(
+        (schema === "validated_confounded" || schema === "confound_candidates") &&
+          !params.tasksText,
+      );
+
+      let fullRecords: Record<string, unknown>[] = [];
+      try {
+        fullRecords = parseJsonl(params.fullPrimaryText);
+      } catch {
+        fullRecords = [];
+      }
+      const embeddedMatrix = extractEmbeddedReviewMatrix(schema, fullRecords);
+      const localMatrix = loadReviewMatrix(params.fileName);
+      const mergedMatrix = mergeReviewMatrices(localMatrix, embeddedMatrix);
+
       loadFromTexts(params.fileName, params.primaryText, {
         schema,
         tasksText: params.tasksText,
         mutantsText: params.mutantsText,
         truncated: params.truncated,
+        reviewMatrixOverride: mergedMatrix,
       });
+      setSourceRecordsForExport(fullRecords.length > 0 ? fullRecords : null);
     },
     [loadFromTexts],
   );
@@ -132,6 +177,15 @@ export function ReviewerApp() {
       .filter((item) => {
         const decision = reviews[item.id]?.decision ?? "pending";
         if (filter !== "all" && decision !== filter) return false;
+
+        const byReviewer = reviewMatrix[item.id] ?? {};
+        const priorReviewedCount = Object.entries(byReviewer).filter(
+          ([rid, r]) => rid !== reviewerId && r.decision !== "pending",
+        ).length;
+        if (queueFilter === "unreviewed" && priorReviewedCount !== 0) return false;
+        if (queueFilter === "reviewed-1" && priorReviewedCount !== 1) return false;
+        if (queueFilter === "reviewed-2plus" && priorReviewedCount < 2) return false;
+
         if (kindFilter !== "all") {
           if (item.variants) {
             if (!itemHasVariantRole(item, kindFilter)) return false;
@@ -140,10 +194,8 @@ export function ReviewerApp() {
           }
         }
         return true;
-      })
-      .map((item) => filterItemVariants(item, kindFilter))
-      .filter((item) => !item.variants || item.variants.length > 0);
-  }, [dataset, reviews, filter, kindFilter]);
+      });
+  }, [dataset, reviews, reviewMatrix, filter, queueFilter, reviewerId, kindFilter]);
 
   useEffect(() => {
     if (index >= filteredItems.length) {
@@ -155,6 +207,14 @@ export function ReviewerApp() {
   const currentDecision: ReviewDecision = current
     ? reviews[current.id]?.decision ?? "pending"
     : "pending";
+
+  useEffect(() => {
+    if (!current) {
+      setDraftComment("");
+      return;
+    }
+    setDraftComment(reviews[current.id]?.comment ?? "");
+  }, [current, reviews]);
 
   const summary = useMemo(() => {
     if (!dataset) return null;
@@ -215,33 +275,78 @@ export function ReviewerApp() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!current || event.target instanceof HTMLInputElement) return;
-      if (event.key === "ArrowRight" || event.key === "j") {
+      const target = event.target as HTMLElement | null;
+      const isTypingTarget =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable;
+      if (!current || isTypingTarget) return;
+
+      const hasActionModifiers = event.ctrlKey && event.shiftKey;
+      if (!hasActionModifiers) return;
+
+      if (event.key === "ArrowRight") {
         event.preventDefault();
         setIndex((i) => Math.min(i + 1, filteredItems.length - 1));
       }
-      if (event.key === "ArrowLeft" || event.key === "k") {
+      if (event.key === "ArrowLeft") {
         event.preventDefault();
         setIndex((i) => Math.max(i - 1, 0));
       }
-      if (event.key === "a") applyDecision("approved", true);
-      if (event.key === "d") applyDecision("discarded", true);
+      if (event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        applyDecision("approved", true);
+      }
+      if (event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        applyDecision("discarded", true);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [current, filteredItems.length, applyDecision]);
 
-  const exportReviews = () => {
+  const exportReviews = async () => {
     if (!dataset) return;
-    const payload = buildExport(
-      dataset.name,
-      dataset.schema,
-      dataset.items.map((item) => item.id),
-    );
-    downloadJson(
-      `reviews-${dataset.name.replace(/[^\w.-]+/g, "_")}-${Date.now()}.json`,
-      payload,
-    );
+    setExporting(true);
+    setExportStatus("Preparing export...");
+    setError(null);
+
+    try {
+      let records = sourceRecordsForExport;
+      if (!records && dataset.sourcePath) {
+        setExportStatus("Loading full source file...");
+        const res = await fetch(
+          `/api/dataset/raw?path=${encodeURIComponent(dataset.sourcePath)}`,
+        );
+        if (res.ok) {
+          const body = (await res.json()) as { records?: Record<string, unknown>[] };
+          records = body.records ?? null;
+        }
+      }
+      if (!records || records.length === 0) {
+        setError(
+          "Could not load full source records for export. Upload the full file to export complete JSONL.",
+        );
+        return;
+      }
+
+      setExportStatus("Merging review metadata...");
+      const augmented = attachReviewsToSourceRows(dataset.schema, records, reviewMatrix);
+      const jsonl = augmented.map((row) => JSON.stringify(row)).join("\n") + "\n";
+      const blob = new Blob([jsonl], { type: "application/jsonl" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `reviews-${reviewerId}-${dataset.name.replace(/[^\w.-]+/g, "_")}-${Date.now()}.jsonl`;
+      setExportStatus("Starting download...");
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setExportStatus("Download started.");
+      setTimeout(() => setExportStatus(null), 2000);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const variantCounts = useMemo(() => {
@@ -281,6 +386,19 @@ export function ReviewerApp() {
         </p>
       )}
 
+      {storageNotice && !error && (
+        <p className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          {storageNotice}
+        </p>
+      )}
+
+      {loadedWithoutCanonicalJoin && !error && (
+        <p className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          No <span className="font-medium">tasks.jsonl</span> join — cards are confound-only, so
+          diff view cannot show canonical. Re-load with tasks.jsonl selected.
+        </p>
+      )}
+
       {dataset && !error && (
         <p className="mt-4 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-3 text-sm text-emerald-200">
           Loaded <span className="font-medium">{dataset.name}</span> ({dataset.schema}) ·{" "}
@@ -299,6 +417,16 @@ export function ReviewerApp() {
           </div>
 
           <div className="mt-4 panel flex flex-wrap items-center gap-3 p-3">
+            <label className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+              Reviewer
+              <input
+                type="text"
+                value={reviewerName}
+                onChange={(e) => setReviewerName(e.target.value)}
+                className="input-field w-40 py-1 text-xs"
+                placeholder="reviewer-1"
+              />
+            </label>
             <span className="section-label">Review status</span>
             {(["all", "pending", "approved", "discarded"] as const).map((mode) => (
               <button
@@ -311,6 +439,28 @@ export function ReviewerApp() {
                 className={`chip capitalize ${filter === mode ? "chip-active" : ""}`}
               >
                 {mode}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-3 panel flex flex-wrap items-center gap-2 p-3">
+            <span className="section-label">Queue</span>
+            {([
+              ["all", "All cards"],
+              ["unreviewed", "0 prior reviews"],
+              ["reviewed-1", "1 prior review"],
+              ["reviewed-2plus", "2+ prior reviews"],
+            ] as const).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => {
+                  setQueueFilter(mode);
+                  setIndex(0);
+                }}
+                className={`chip ${queueFilter === mode ? "chip-active" : ""}`}
+              >
+                {label}
               </button>
             ))}
           </div>
@@ -386,6 +536,10 @@ export function ReviewerApp() {
             </div>
           </div>
 
+          {exportStatus && (
+            <p className="mt-2 text-sm text-[var(--text-muted)]">{exportStatus}</p>
+          )}
+
           {filteredItems.length === 0 ? (
             <p className="mt-8 text-center text-sm text-zinc-500">
               No cards match the current filters.
@@ -401,6 +555,8 @@ export function ReviewerApp() {
                 viewMode={viewMode}
                 showPrompt={showPrompt}
                 onShowPromptChange={setShowPrompt}
+                onCommentChange={setDraftComment}
+                onCommentSave={saveComment}
                 onApprove={() => applyDecision("approved", true)}
                 onDiscard={() => applyDecision("discarded", true)}
                 onClear={() => applyDecision("pending")}
@@ -471,4 +627,105 @@ function Toggle({
       {label}
     </button>
   );
+}
+
+function attachReviewsToSourceRows(
+  schema: DatasetSchema,
+  records: Record<string, unknown>[],
+  reviewMatrix: ReviewMatrix,
+): Record<string, unknown>[] {
+  const idField =
+    schema === "mutants" || schema === "validated_mutants"
+      ? "mutant_id"
+      : schema === "confound_candidates" || schema === "validated_confounded"
+        ? "variant_id"
+        : schema === "tasks" || schema === "validated_tasks" || schema === "dropped_tasks"
+          ? "task_id"
+          : null;
+
+  return records.map((row) => {
+    const withReviews = { ...row } as Record<string, unknown>;
+
+    if (schema === "phase2" || schema === "icse26") {
+      const impls = row.implementations;
+      if (Array.isArray(impls)) {
+        const implementation_reviews: Record<string, unknown> = {};
+        for (const impl of impls) {
+          if (
+            impl &&
+            typeof impl === "object" &&
+            "implementation_id" in impl &&
+            typeof (impl as { implementation_id?: unknown }).implementation_id === "string"
+          ) {
+            const implId = (impl as { implementation_id: string }).implementation_id;
+            implementation_reviews[implId] = reviewMatrix[implId] ?? {};
+          }
+        }
+        withReviews._review = { implementation_reviews };
+      }
+      return withReviews;
+    }
+
+    if (idField && typeof row[idField] === "string") {
+      const itemId = String(row[idField]);
+      withReviews._review = {
+        reviewers: reviewMatrix[itemId] ?? {},
+      };
+    }
+
+    return withReviews;
+  });
+}
+
+function mergeReviewMatrices(base: ReviewMatrix, incoming: ReviewMatrix): ReviewMatrix {
+  const merged: ReviewMatrix = { ...base };
+  for (const [itemId, byReviewer] of Object.entries(incoming)) {
+    merged[itemId] = {
+      ...(merged[itemId] ?? {}),
+      ...byReviewer,
+    };
+  }
+  return merged;
+}
+
+function extractEmbeddedReviewMatrix(
+  schema: DatasetSchema,
+  records: Record<string, unknown>[],
+): ReviewMatrix {
+  const matrix: ReviewMatrix = {};
+  const idField =
+    schema === "mutants" || schema === "validated_mutants"
+      ? "mutant_id"
+      : schema === "confound_candidates" || schema === "validated_confounded"
+        ? "variant_id"
+        : schema === "tasks" || schema === "validated_tasks" || schema === "dropped_tasks"
+          ? "task_id"
+          : null;
+
+  for (const row of records) {
+    const review = row._review;
+    if (!review || typeof review !== "object") continue;
+
+    if (schema === "phase2" || schema === "icse26") {
+      const implReviews = (review as { implementation_reviews?: unknown })
+        .implementation_reviews;
+      if (!implReviews || typeof implReviews !== "object") continue;
+      for (const [implId, byReviewer] of Object.entries(
+        implReviews as Record<string, unknown>,
+      )) {
+        if (!byReviewer || typeof byReviewer !== "object") continue;
+        matrix[implId] = byReviewer as Record<string, import("@/lib/types").ReviewRecord>;
+      }
+      continue;
+    }
+
+    if (!idField || typeof row[idField] !== "string") continue;
+    const itemId = String(row[idField]);
+    const byReviewer = (review as { reviewers?: unknown }).reviewers;
+    if (byReviewer && typeof byReviewer === "object") {
+      matrix[itemId] = byReviewer as Record<string, import("@/lib/types").ReviewRecord>;
+    }
+  }
+
+  return matrix;
 }

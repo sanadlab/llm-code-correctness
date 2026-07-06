@@ -158,7 +158,22 @@ export function ReviewCard({
       </div>
 
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] bg-[var(--surface-elevated)] px-5 py-4">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-col gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-500">
+              Review comment (optional)
+            </label>
+            <textarea
+              value={comment}
+              onChange={(e) => onCommentChange(e.target.value)}
+              onBlur={onCommentSave}
+              rows={2}
+              placeholder="Add context for approve/discard..."
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none ring-emerald-500/40 placeholder:text-zinc-500 focus:ring-2"
+            />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={onApprove}
@@ -180,12 +195,19 @@ export function ReviewCard({
           >
             Reset
           </button>
+            </div>
+            <p className="text-xs text-zinc-500">
+              <kbd className="rounded bg-zinc-200 px-1 dark:bg-zinc-800">Ctrl+Shift+A</kbd>{" "}
+              approve ·{" "}
+              <kbd className="rounded bg-zinc-200 px-1 dark:bg-zinc-800">Ctrl+Shift+D</kbd>{" "}
+              discard ·{" "}
+              <kbd className="rounded bg-zinc-200 px-1 dark:bg-zinc-800">
+                Ctrl+Shift+→
+              </kbd>{" "}
+              next
+            </p>
+          </div>
         </div>
-        <p className="text-xs text-zinc-500">
-          <kbd className="rounded bg-zinc-200 px-1 dark:bg-zinc-800">a</kbd> approve ·{" "}
-          <kbd className="rounded bg-zinc-200 px-1 dark:bg-zinc-800">d</kbd> discard ·{" "}
-          <kbd className="rounded bg-zinc-200 px-1 dark:bg-zinc-800">→</kbd> next
-        </p>
       </footer>
     </article>
   );

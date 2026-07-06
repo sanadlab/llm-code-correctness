@@ -11,6 +11,24 @@ export interface ReadJsonlOptions {
   taskId?: string;
 }
 
+export async function readAllJsonlRecords(
+  relativePath: string,
+): Promise<Record<string, unknown>[]> {
+  const filePath = pickReadablePath(relativePath);
+  const records: Record<string, unknown>[] = [];
+
+  for await (const line of iterateLines(filePath)) {
+    if (!line.trim()) continue;
+    try {
+      records.push(JSON.parse(line) as Record<string, unknown>);
+    } catch {
+      // Skip malformed lines to keep export robust.
+    }
+  }
+
+  return records;
+}
+
 /** Line-based offset (scan from start). */
 export async function readJsonlRecordsWithLineOffset(
   relativePath: string,

@@ -89,10 +89,9 @@ function buildFromParts(parts: {
 export function parseOperatorFromMutantId(
   mutantId: string,
 ): { code: string; name: string } | null {
-  const parts = mutantId.split("__");
-  if (parts.length < 3) return null;
-  const code = parts[parts.length - 2];
-  if (!code || code === "confound" || code === "canonical") return null;
+  const match = mutantId.match(/__([A-Z]{2,6})__/);
+  const code = match?.[1];
+  if (!code) return null;
   return { code, name: operatorNameFromCode(code) };
 }
 

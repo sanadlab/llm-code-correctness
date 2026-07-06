@@ -1,6 +1,6 @@
 # Datasets
 
-This folder has the two datasets you'll use this summer. The summer plan calls them **ICSE26_DS** and **Mutation_DS**.
+This folder has the two datasets we'll use: **ICSE26_DS** and **Mutation_DS**.
 
 ## ICSE26_DS — `icse26/`
 
@@ -43,6 +43,34 @@ Look in `bigcodebench/intermediate/`. That's the output of the mutation + refact
 - `confound_candidates.jsonl`, `validated_confounded.jsonl` → refactored variants before/after validation
 
 If you're auditing or editing the pipeline, this is where the evidence lives.
+
+## Mutants-only ablation — `mutants_only_bcb_based/`, `mutants_only_he_based/`
+
+Two benchmark-specific corpora, same internal layout: `mutants_only_bcb_based/`
+(BigCodeBench-derived mutants, the original/default corpus) and
+`mutants_only_he_based/` (HumanEval-derived mutants). Pass `--mutants-benchmark
+bcb_based|he_based` to `cache_hidden_states.py` / `fit_and_score_from_cache.py`
+to pick one (default: `bcb_based`). `mutants_confounds_bcb_based/` /
+`mutants_confounds_he_based/` follow the same convention.
+
+Strategy subfolders for hidden-state caching / scoring (uniform across both
+benchmarks):
+
+- `paired/` — one canonical+mutant row per mutant (large fit/val sets).
+- `weighted/` — operator-weighted subsample for fit/val and the **canonical mutant test** split (3 mutants per task).
+
+`paired/` has only `fit.jsonl` and `validate.jsonl`. When `--test-dataset mutants_only`, scoring always loads test from `mutants_only_<benchmark>/weighted/` regardless of fit strategy.
+
+Build via `scripts/dataset/limit_mutants_only_impls.py` (weighted) and `scripts/dataset/build_mutants_only.py`. Operator frequencies: `scripts/analysis/mutation_operator_frequencies.py`.
+
+At score time, `test_dataset` selects the test benchmark:
+
+- `bigcodebench` or `humaneval` — canonical test from `icse26/<benchmark>/id/test/...`
+- `mutants_only` — mutant test from `mutants_only_<benchmark>/weighted/` (when fitting on `paired` or `weighted`), where `<benchmark>` is whatever `--mutants-benchmark` selected for fit/validate.
+
+**Cache layout:** `hidden_states/<model>/mutants_only_<benchmark>/<strategy>/{fit,validate,test}/<framing>/fold_<N>/` — no `benchmark/` or `id/` segment. Test caches exist only under `mutants_only_<benchmark>/weighted/`.
+
+**Migrating legacy caches** (manual): `S2-M-pair` fit/val → `mutants_only_bcb_based/paired` fit/val; mutant test caches → `mutants_only_bcb_based/weighted/test` only.
 
 ---
 
