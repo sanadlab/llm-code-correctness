@@ -40,7 +40,7 @@ None of the `make` targets below need the venv activated — they invoke the ven
 
 ## Downloading data and results
 
-All datasets and experimental results are hosted on figshare, as they are too large for git. Download the archives you need from **https://figshare.com/s/4dccae927dbe7772d2a8**, copy them to the repo root on HPC, and extract each one with:
+All datasets and experimental results are hosted on figshare, as they are too large for git. Download the archives you need from **https://doi.org/10.6084/m9.figshare.31752142**, copy them to the repo root on HPC, and extract each one with:
 
 ```bash
 tar -xf <archive.tar.zst>
